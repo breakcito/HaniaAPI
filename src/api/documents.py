@@ -284,7 +284,7 @@ async def void_document(
         # Enviar baja a Factos API
         await factos_client.void_document(doc.facturador_document_id, payload.reason)
 
-    doc.sunat_description = f"Comprobante anulado / dado de baja. Motivo: {payload.reason}"
+    doc.sunat_description = f"{payload.reason}"
 
     db.commit()
     db.refresh(doc)
