@@ -7,6 +7,7 @@ class BankOut(BaseModel):
     code: str
     name: str
     short_name: Optional[str] = None
+    is_national: bool = False
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
@@ -19,6 +20,7 @@ class BankAccountBase(BaseModel):
     account_number: str
     cci_number: Optional[str] = None
     alias: Optional[str] = None
+    is_detraction: bool = False
     show_in_pdf: bool = True
     is_default: bool = False
 
@@ -34,6 +36,7 @@ class BankAccountUpdate(BaseModel):
     account_number: Optional[str] = None
     cci_number: Optional[str] = None
     alias: Optional[str] = None
+    is_detraction: Optional[bool] = None
     show_in_pdf: Optional[bool] = None
     is_default: Optional[bool] = None
     is_active: Optional[bool] = None

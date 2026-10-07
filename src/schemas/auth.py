@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class LoginRequest(BaseModel):
     username: str = Field(..., description="Nombre de usuario")
@@ -23,6 +23,7 @@ class UserUpdate(BaseModel):
     role: Optional[str] = None
     default_company_id: Optional[int] = None
     assigned_series: Optional[str] = None
+    permissions: Optional[str] = None
     password: Optional[str] = None
 
 class UserOut(BaseModel):
@@ -32,14 +33,14 @@ class UserOut(BaseModel):
     email: Optional[str] = None
     phone: Optional[str] = None
     role: str = "ADMIN"
+    permissions: Optional[str] = None
     default_company_id: Optional[int] = None
     assigned_series: Optional[str] = None
     is_active: bool
     deleted_at: Optional[datetime] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TokenResponse(BaseModel):
     access_token: str

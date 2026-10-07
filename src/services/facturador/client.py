@@ -88,13 +88,30 @@ class FacturadorClient:
         """Consulta datos de empresa o persona jurídica en SUNAT mediante el facturador."""
         return await self.request("GET", f"services/ruc/{ruc.strip()}")
 
+    async def get_ruc_data(self, ruc: str) -> Dict[str, Any]:
+        """Alias para query_ruc."""
+        return await self.query_ruc(ruc)
+
     async def query_dni(self, dni: str) -> Dict[str, Any]:
         """Consulta datos de persona natural en RENIEC mediante el facturador."""
         return await self.request("GET", f"services/dni/{dni.strip()}")
 
-    async def query_exchange_rate(self) -> Dict[str, Any]:
-        """Consulta el tipo de cambio oficial del día (compra/venta) publicado por SBS/SUNAT."""
-        return await self.request("GET", "services/exchange-rate")
+    async def get_dni_data(self, dni: str) -> Dict[str, Any]:
+        """Alias para query_dni."""
+        return await self.query_dni(dni)
+
+    async def query_exchange_rate(self, date: Optional[str] = None, source: Optional[str] = "sunat") -> Dict[str, Any]:
+        """Consulta el tipo de cambio oficial (compra/venta) publicado por SBS o SUNAT."""
+        params: Dict[str, Any] = {}
+        if date:
+            params["date"] = date
+        if source:
+            params["source"] = source.lower()
+        return await self.request("GET", "services/exchange-rate", params=params or None)
+
+    async def get_exchange_rate(self, date: Optional[str] = None, source: Optional[str] = "sunat") -> Dict[str, Any]:
+        """Alias para query_exchange_rate."""
+        return await self.query_exchange_rate(date=date, source=source)
 
     # ==========================================
     # Gestión de Empresas (Tenants) en Facturador

@@ -22,6 +22,8 @@ def list_despatches(
     series: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None, description="Fecha inicio YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="Fecha fin YYYY-MM-DD"),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
     include_inactive: bool = Query(False, description="Incluir guías eliminadas lógicamente"),
@@ -39,6 +41,18 @@ def list_despatches(
         q = q.filter(Despatch.series == series.upper())
     if status:
         q = q.filter(Despatch.status == status)
+    if start_date:
+        try:
+            d_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            q = q.filter(Despatch.issue_date >= d_start)
+        except ValueError:
+            pass
+    if end_date:
+        try:
+            d_end = datetime.strptime(end_date, "%Y-%m-%d").date()
+            q = q.filter(Despatch.issue_date <= d_end)
+        except ValueError:
+            pass
     if search:
         pattern = f"%{search}%"
         q = q.filter(Despatch.series.ilike(pattern))

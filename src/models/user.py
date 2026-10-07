@@ -12,8 +12,9 @@ class User(Base):
     email = Column(String(100), nullable=True)
     phone = Column(String(50), nullable=True)
     
-    # Roles y Permisos: ADMIN (Total), FACTURADOR (Emisión), VENDEDOR (POS/Caja), CONTADOR (Reportes)
-    role = Column(String(20), default="ADMIN", nullable=False)
+    # Roles y Permisos (presets o lista personalizada)
+    role = Column(String(50), default="ADMIN", nullable=False)
+    permissions = Column(String(1000), nullable=True) # Lista de módulos permitidos (dashboard,invoices,etc.)
     default_company_id = Column(Integer, nullable=True) # Empresa predeterminada asignada
     assigned_series = Column(String(255), nullable=True) # Series fiscales asignadas (ej. F001,B001)
     

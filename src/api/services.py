@@ -41,19 +41,37 @@ async def lookup_dni(
 
 @router.get("/exchange-rate")
 async def get_exchange_rate(
+    date: str | None = None,
+    source: str = "sunat",
     current_user: User = Depends(get_current_user),
 ):
-    result = await factos_client.get_exchange_rate()
+    result = await factos_client.get_exchange_rate(date=date, source=source)
     if result.get("error"):
-        # Fallback de seguridad si el servicio de tipo de cambio externo tiene una pausa
         return {
             "status": "success",
             "data": {
                 "moneda": "USD",
-                "fecha": "hoy",
+                "currency": "USD",
+                "fecha": date or "hoy",
+                "date": date or "hoy",
                 "compra": 3.745,
                 "venta": 3.755,
-                "origen": "referencial",
+                "buy_rate": 3.745,
+                "sell_rate": 3.755,
+                "origen": source.upper(),
+                "source": source.upper(),
             }
         }
+    if "data" in result and isinstance(result["data"], dict):
+        d = result["data"]
+        try:
+            buy = d.get("buy_rate") if d.get("buy_rate") is not None else d.get("compra", 3.745)
+            sell = d.get("sell_rate") if d.get("sell_rate") is not None else d.get("venta", 3.755)
+            d["buy_rate"] = float(buy) if buy is not None else 3.745
+            d["sell_rate"] = float(sell) if sell is not None else 3.755
+            d["compra"] = d["buy_rate"]
+            d["venta"] = d["sell_rate"]
+        except (ValueError, TypeError):
+            d["buy_rate"] = 3.745
+            d["sell_rate"] = 3.755
     return result

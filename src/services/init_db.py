@@ -61,9 +61,10 @@ def _sync_schema_columns():
             ("deleted_at", "DATETIME NULL"),
             ("email", "VARCHAR(100) NULL"),
             ("phone", "VARCHAR(50) NULL"),
-            ("role", "VARCHAR(20) NOT NULL DEFAULT 'ADMIN'"),
+            ("role", "VARCHAR(50) NOT NULL DEFAULT 'ADMIN'"),
             ("default_company_id", "INT NULL"),
             ("assigned_series", "VARCHAR(10) NULL"),
+            ("permissions", "TEXT NULL"),
         ],
         "documents": [
             ("is_active", "TINYINT(1) NOT NULL DEFAULT 1"),

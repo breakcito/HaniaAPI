@@ -14,22 +14,26 @@ class Employee(Base):
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     
-    # Cargo y Función en la Empresa
-    job_title = Column(String(50), default="Vendedor", nullable=False) # Vendedor, Chofer/Conductor, Cajero, Administrador
+    # Cargo / Rol Opcional
+    job_title = Column(String(50), nullable=True, default=None)
     email = Column(String(100), nullable=True)
     phone = Column(String(50), nullable=True)
     
     # Para choferes de Guías de Remisión (GRE)
     license_number = Column(String(20), nullable=True) # Licencia de conducir MTC (ej. Q12345678)
     
-    # Comisión comercial por ventas (%)
-    commission_rate = Column(Numeric(5, 2), default=0.00, nullable=False)
+    # Comisión comercial opcional
+    commission_rate = Column(Numeric(5, 2), default=0.00, nullable=True)
     
+    # Vinculación con cuenta de acceso de usuario (si tiene credenciales en el sistema)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
     is_active = Column(Boolean, default=True, nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     deleted_at = Column(DateTime, nullable=True)
 
     company = relationship("Company", back_populates="employees")
+    user = relationship("User", foreign_keys=[user_id])
 
     @property
     def full_name(self) -> str:

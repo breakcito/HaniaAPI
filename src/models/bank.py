@@ -10,6 +10,7 @@ class Bank(Base):
     code = Column(String(20), unique=True, index=True, nullable=False) # BCP, BBVA, INTERBANK, SCOTIABANK, BN, BANBIF, PICHINCHA
     name = Column(String(100), nullable=False)
     short_name = Column(String(50), nullable=True)
+    is_national = Column(Boolean, default=False, nullable=False) # True para Banco de la Nación
     is_active = Column(Boolean, default=True, nullable=False)
 
     accounts = relationship("BankAccount", back_populates="bank")
@@ -30,6 +31,7 @@ class BankAccount(Base):
     cci_number = Column(String(50), nullable=True)
     alias = Column(String(100), nullable=True)
     
+    is_detraction = Column(Boolean, default=False, nullable=False) # Si es cuenta de detracción BN
     show_in_pdf = Column(Boolean, default=True, nullable=False)
     is_default = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False, index=True)

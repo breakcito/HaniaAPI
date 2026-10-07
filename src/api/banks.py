@@ -31,6 +31,7 @@ def list_bank_accounts(
     company_id: Optional[int] = Query(None, description="Filtrar por empresa"),
     account_type: Optional[str] = Query(None, description="corriente, ahorros, detraccion"),
     currency: Optional[str] = Query(None, description="PEN, USD"),
+    is_detraction: Optional[bool] = Query(None, description="Filtrar cuentas de detracción del Banco de la Nación"),
     include_inactive: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -45,6 +46,8 @@ def list_bank_accounts(
         q = q.filter(BankAccount.account_type == account_type)
     if currency:
         q = q.filter(BankAccount.currency == currency.upper())
+    if is_detraction is not None:
+        q = q.filter(BankAccount.is_detraction == is_detraction)
 
     return q.order_by(BankAccount.is_default.desc(), BankAccount.id.asc()).all()
 
@@ -64,6 +67,13 @@ def create_bank_account(
     if not bank:
         raise HTTPException(status_code=404, detail="Entidad bancaria no válida")
 
+    # Si es cuenta de detracción, debe ser Banco de la Nación o banco nacional y en Soles (PEN)
+    if payload.is_detraction:
+        if not (bank.is_national or bank.code == "BN" or "naci" in bank.name.lower()):
+            raise HTTPException(status_code=400, detail="Las cuentas de detracción deben pertenecer al Banco de la Nación")
+        if payload.currency.upper() != "PEN":
+            raise HTTPException(status_code=400, detail="Las cuentas de detracción deben estar en Soles (PEN)")
+
     # Si es cuenta por defecto, desmarcar otras cuentas de la misma moneda y tipo
     if payload.is_default:
         db.query(BankAccount).filter(
@@ -80,6 +90,7 @@ def create_bank_account(
         account_number=payload.account_number.strip(),
         cci_number=payload.cci_number.strip() if payload.cci_number else None,
         alias=payload.alias.strip() if payload.alias else None,
+        is_detraction=payload.is_detraction,
         show_in_pdf=payload.show_in_pdf,
         is_default=payload.is_default,
         is_active=True,

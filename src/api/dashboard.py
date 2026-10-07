@@ -22,6 +22,8 @@ MONTH_NAMES_ES = {
 def get_dashboard_stats(
     company_id: Optional[int] = Query(None),
     is_test_mode: Optional[bool] = Query(None),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -35,6 +37,14 @@ def get_dashboard_stats(
     if is_test_mode is not None:
         doc_q = doc_q.filter(Document.is_test_mode == is_test_mode)
         desp_q = desp_q.filter(Despatch.is_test_mode == is_test_mode)
+
+    if start_date is not None:
+        doc_q = doc_q.filter(Document.issue_date >= start_date)
+        desp_q = desp_q.filter(Despatch.issue_date >= start_date)
+
+    if end_date is not None:
+        doc_q = doc_q.filter(Document.issue_date <= end_date)
+        desp_q = desp_q.filter(Despatch.issue_date <= end_date)
 
     all_docs = doc_q.all()
     all_desps = desp_q.all()

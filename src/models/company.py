@@ -29,6 +29,7 @@ class Company(Base):
     logo_url = Column(Text, nullable=True)
 
     is_matrix = Column(Boolean, default=False, nullable=False) # True para Cupper & Hannia
+    is_production = Column(Boolean, default=True, nullable=False, index=True) # False para Empresa de Prueba
     is_active = Column(Boolean, default=True, nullable=False, index=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)

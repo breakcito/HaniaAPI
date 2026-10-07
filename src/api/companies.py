@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -12,17 +12,31 @@ from src.models.bank import Bank, BankAccount
 from src.schemas.company import CompanyCreate, CompanyUpdate, CompanyOut
 from src.services.facturador.client import facturador_gateway
 
+from src.services.facturador.sync import auto_sync_test_company
+
 router = APIRouter(prefix="/companies", tags=["Multiempresa"])
 
 @router.get("", response_model=List[CompanyOut])
-def list_companies(
+async def list_companies(
     include_inactive: bool = Query(False, description="Incluir empresas eliminadas lógicamente"),
+    is_production: Optional[bool] = Query(None, description="Filtrar por entorno de producción o pruebas"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Verificación proactiva: Si no existe empresa de prueba en Hania, sincronizarla con Factos API
+    if is_production is not True:
+        has_test_company = db.query(Company).filter(Company.is_production == False, Company.is_active == True).first()
+        if not has_test_company:
+            try:
+                await auto_sync_test_company(db)
+            except Exception:
+                pass
+
     q = db.query(Company)
     if not include_inactive:
         q = q.filter(Company.is_active == True)
+    if is_production is not None:
+        q = q.filter(Company.is_production == is_production)
     return q.order_by(Company.is_matrix.desc(), Company.id.asc()).all()
 
 @router.get("/{company_id}", response_model=CompanyOut)
@@ -90,6 +104,7 @@ async def create_company(
         logo_url=payload.logo_url,
         facturador_company_id=payload.facturador_company_id,
         is_matrix=payload.is_matrix,
+        is_production=payload.is_production,
         is_active=True,
     )
     db.add(company)

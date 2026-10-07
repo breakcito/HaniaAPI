@@ -20,6 +20,7 @@ class CompanyBase(BaseModel):
     email: Optional[str] = None
     website: Optional[str] = None
     logo_url: Optional[str] = None
+    is_production: bool = True
 
 class CompanyCreate(CompanyBase):
     is_matrix: bool = False
@@ -41,12 +42,14 @@ class CompanyUpdate(BaseModel):
     website: Optional[str] = None
     logo_url: Optional[str] = None
     facturador_company_id: Optional[str] = None
+    is_production: Optional[bool] = None
     is_active: Optional[bool] = None
 
 class CompanyOut(CompanyBase):
     id: int
     facturador_company_id: Optional[str] = None
     is_matrix: bool
+    is_production: bool
     is_active: bool
     deleted_at: Optional[datetime] = None
     created_at: datetime
