@@ -11,6 +11,7 @@ from src.models.user import User
 from src.models.company import Company
 from src.models.client import Client
 from src.models.document import Document, DocumentItem
+from src.models.series import CompanySeries
 from src.schemas.document import DocumentCreate, DocumentOut, DocumentVoidRequest
 from src.services.factos_client import factos_client
 
@@ -24,6 +25,7 @@ def list_documents(
     series: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    offset: int = Query(0, ge=0),
     limit: int = Query(50, le=200),
     include_inactive: bool = Query(False, description="Incluir comprobantes eliminados lógicamente"),
     db: Session = Depends(get_db),
@@ -79,12 +81,18 @@ async def create_document(
     if payload.correlative is not None and payload.correlative > 0:
         correlative = payload.correlative
     else:
+        series_record = db.query(CompanySeries).filter(
+            CompanySeries.company_id == company.id,
+            CompanySeries.document_type == payload.type_code,
+            CompanySeries.series == series,
+        ).first()
         max_corr = db.query(func.max(Document.correlative)).filter(
             Document.company_id == company.id,
             Document.type_code == payload.type_code,
             Document.series == series,
-        ).scalar()
-        correlative = (max_corr or 0) + 1
+        ).scalar() or 0
+        base_corr = series_record.correlative_current if series_record else 0
+        correlative = max(base_corr, max_corr) + 1
 
     # 2. Calcular totales a partir de los ítems
     total_taxable = Decimal("0.00")
@@ -139,6 +147,8 @@ async def create_document(
         client_name=payload.client.name.strip(),
         client_address=payload.client.address,
         client_email=payload.client.email,
+        seller_name=payload.seller_name,
+        employee_id=payload.employee_id,
         total_taxable=total_taxable,
         total_igv=total_igv,
         total=total_doc,
@@ -162,6 +172,10 @@ async def create_document(
             total=it.total,
         )
         db.add(doc_item)
+
+    # Actualizar correlativo registrado de la serie
+    if series_record:
+        series_record.correlative_current = max(series_record.correlative_current, correlative)
 
     # 5. Enviar a Factos API (o procesar en modo prueba)
     if payload.is_test_mode:
@@ -276,21 +290,30 @@ async def void_document(
     db.refresh(doc)
     return doc
 
-@router.delete("/{document_id}", status_code=status.HTTP_200_OK)
+@router.put("/{document_id}")
+@router.patch("/{document_id}")
+def update_document_blocked(
+    document_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    """Bloqueo explícito de edición: Los comprobantes de pago electrónicos son inmutables."""
+    raise HTTPException(
+        status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+        detail="Los comprobantes electrónicos son inmutables por normativa tributaria. No se permite la edición de un comprobante emitido. Para corregir montos o anular efectos fiscales, emita una Nota de Crédito o una comunicación de baja."
+    )
+
+@router.delete("/{document_id}", status_code=status.HTTP_400_BAD_REQUEST)
 def delete_document(
     document_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Eliminación LÓGICA (Soft Delete) de comprobante. Nunca se elimina físicamente de la base de datos."""
+    """Regla de inmutabilidad: Los comprobantes tributarios emitidos no pueden ser eliminados."""
     doc = db.query(Document).filter(Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Comprobante no encontrado")
 
-    if not doc.is_active:
-        return {"message": "El comprobante ya fue eliminado lógicamente", "id": document_id, "is_active": False}
-
-    doc.is_active = False
-    doc.deleted_at = datetime.now(timezone.utc)
-    db.commit()
-    return {"message": "Comprobante archivado/eliminado lógicamente con éxito", "id": document_id, "is_active": False}
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Inmutabilidad fiscal: Los comprobantes de pago electrónicos son inmutables y no pueden eliminarse del registro. Si requiere anular la validez del comprobante ante SUNAT, utilice el endpoint de anulación (/documents/{id}/void) o emita una Nota de Crédito."
+    )

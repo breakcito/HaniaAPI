@@ -22,6 +22,13 @@ from src.api.services import router as services_router
 from src.api.clients import router as clients_router
 from src.api.products import router as products_router
 from src.api.dashboard import router as dashboard_router
+from src.api.banks import router as banks_router
+from src.api.series import router as series_router
+from src.api.catalogs import router as catalogs_router
+from src.api.webhooks import router as webhooks_router
+from src.api.reports import router as reports_router
+from src.api.employees import router as employees_router
+from src.api.vehicles import router as vehicles_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hania_api")
@@ -62,6 +69,13 @@ app.include_router(services_router, prefix="/api")
 app.include_router(clients_router, prefix="/api")
 app.include_router(products_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
+app.include_router(banks_router, prefix="/api")
+app.include_router(series_router, prefix="/api")
+app.include_router(catalogs_router, prefix="/api")
+app.include_router(webhooks_router, prefix="/api")
+app.include_router(reports_router, prefix="/api")
+app.include_router(employees_router, prefix="/api")
+app.include_router(vehicles_router, prefix="/api")
 
 @app.get("/health")
 @app.get("/api/health")

@@ -26,6 +26,8 @@ class Settings(BaseSettings):
 
     # Conexión con Factos API
     API_FACTURADOR_URL: str = os.getenv("API_FACTURADOR_URL", "").rstrip("/")
+    API_KEY_FACTURADOR: str = os.getenv("API_KEY_FACTURADOR", "")
+    WEBHOOK_SECRET: str = os.getenv("WEBHOOK_SECRET", "")
     FACTOS_USER_EMAIL: str = os.getenv("FACTOS_USER_EMAIL", "")
     FACTOS_USER_PASSWORD: str = os.getenv("FACTOS_USER_PASSWORD", "")
     FACTOS_COMPANY_ID: str = os.getenv("FACTOS_COMPANY_ID", "")

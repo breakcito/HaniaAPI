@@ -1,6 +1,7 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class CompanyBase(BaseModel):
     ruc: str = Field(..., min_length=11, max_length=11)
@@ -13,9 +14,16 @@ class CompanyBase(BaseModel):
     district: Optional[str] = None
     establishment_code: str = "0000"
     sol_user: Optional[str] = None
+    bn_account: Optional[str] = None
+    detraction_percent_default: Optional[Decimal] = Decimal("10.00")
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
+    logo_url: Optional[str] = None
 
 class CompanyCreate(CompanyBase):
     is_matrix: bool = False
+    facturador_company_id: Optional[str] = None
 
 class CompanyUpdate(BaseModel):
     business_name: Optional[str] = None
@@ -26,6 +34,13 @@ class CompanyUpdate(BaseModel):
     province: Optional[str] = None
     district: Optional[str] = None
     sol_user: Optional[str] = None
+    bn_account: Optional[str] = None
+    detraction_percent_default: Optional[Decimal] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
+    logo_url: Optional[str] = None
+    facturador_company_id: Optional[str] = None
     is_active: Optional[bool] = None
 
 class CompanyOut(CompanyBase):
@@ -36,5 +51,4 @@ class CompanyOut(CompanyBase):
     deleted_at: Optional[datetime] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -43,6 +43,10 @@ class Document(Base):
     client_address = Column(String(255), nullable=True)
     client_email = Column(String(255), nullable=True)
     
+    # Vendedor o Trabajador responsable de la venta
+    seller_name = Column(String(100), nullable=True)
+    employee_id = Column(Integer, nullable=True, index=True)
+    
     # Totales
     total_taxable = Column(Numeric(14, 2), default=0.00, nullable=False)
     total_unaffected = Column(Numeric(14, 2), default=0.00, nullable=False)

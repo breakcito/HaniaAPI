@@ -66,6 +66,10 @@ class DocumentCreate(BaseModel):
     purchase_order: Optional[str] = None
     plate_number: Optional[str] = None
     
+    # Responsable de la venta / Vendedor
+    seller_name: Optional[str] = None
+    employee_id: Optional[int] = None
+    
     client: ClientDataSchema
     items: List[DocumentItemSchema]
 
@@ -96,6 +100,8 @@ class DocumentOut(BaseModel):
     client_name: str
     client_address: Optional[str] = None
     client_email: Optional[str] = None
+    seller_name: Optional[str] = None
+    employee_id: Optional[int] = None
     
     total_taxable: Decimal
     total_unaffected: Decimal
