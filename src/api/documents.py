@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
+from src.core.datetime_peru import now_peru
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -14,6 +15,8 @@ from src.models.document import Document, DocumentItem
 from src.models.series import CompanySeries
 from src.schemas.document import DocumentCreate, DocumentOut, DocumentVoidRequest
 from src.services.factos_client import factos_client
+from src.services.facturador.company_link import resolve_factos_company_id, FactosLinkError
+from src.services.facturador.responses import map_status, file_urls, raise_factos_error
 
 router = APIRouter(prefix="/documents", tags=["Comprobantes Electrónicos"])
 
@@ -120,14 +123,12 @@ async def create_document(
         total_doc += it.total
         items_to_create.append(it)
 
-    # 3. Guardar/actualizar cliente en la libreta si no existía
+    # 3. Guardar/actualizar cliente en la libreta si no existía (directorio corporativo)
     existing_client = db.query(Client).filter(
-        Client.company_id == company.id,
         Client.doc_number == payload.client.doc_number.strip(),
     ).first()
     if not existing_client:
         new_client = Client(
-            company_id=company.id,
             doc_type=payload.client.doc_type,
             doc_number=payload.client.doc_number.strip(),
             name=payload.client.name.strip(),
@@ -137,16 +138,25 @@ async def create_document(
         db.add(new_client)
 
     # 4. Crear el registro en base de datos local
-    now_utc = datetime.now(timezone.utc)
+    # Determinar tipo de operación SUNAT automáticamente según el contenido
+    operation_type = payload.operation_type
+    if payload.detraction:
+        operation_type = "1001"  # Operación Sujeta a Detracción
+    elif payload.retention:
+        operation_type = "2001"  # Operación Sujeta a Percepción / Retención
+    elif all(it.igv_type == "40" for it in payload.items):
+        operation_type = "0200"  # Exportación de bienes/servicios
+
+    now_pe = now_peru()
     new_doc = Document(
         company_id=company.id,
         is_test_mode=payload.is_test_mode,
         type_code=payload.type_code,
-        operation_type=payload.operation_type,
+        operation_type=operation_type,
         series=series,
         correlative=correlative,
         issue_date=payload.issue_date,
-        issue_time=payload.issue_time or "12:00:00",
+        issue_time=payload.issue_time or now_pe.strftime("%H:%M:%S"),
         due_date=payload.due_date,
         currency=payload.currency,
         payment_method=payload.payment_method,
@@ -167,7 +177,7 @@ async def create_document(
         total_igv=total_igv,
         total=total_doc,
         status="pending",
-        created_at=now_utc,
+        created_at=now_pe,
     )
     db.add(new_doc)
     db.flush()
@@ -191,85 +201,94 @@ async def create_document(
     if series_record:
         series_record.correlative_current = max(series_record.correlative_current, correlative)
 
-    # 5. Enviar a Factos API (o procesar en modo prueba)
-    if payload.is_test_mode:
-        # Modo de Prueba: Simulación exitosa y segura para el usuario
-        new_doc.status = "accepted"
-        new_doc.sunat_code = "0"
-        new_doc.sunat_description = f"[MODO PRUEBA] El comprobante {series}-{str(correlative).zfill(8)} fue procesado satisfactoriamente sin impacto fiscal."
-        if settings.API_FACTURADOR_URL:
-            new_doc.pdf_url = f"{settings.API_FACTURADOR_URL}/api/v1/documents/simulated-{series}-{correlative}/pdf"
-            new_doc.xml_url = f"{settings.API_FACTURADOR_URL}/api/v1/documents/simulated-{series}-{correlative}/xml"
-            new_doc.cdr_url = f"{settings.API_FACTURADOR_URL}/api/v1/documents/simulated-{series}-{correlative}/cdr"
-    else:
-        # Modo Real: Enviar a Factos API
-        factos_company_id = company.facturador_company_id or settings.FACTOS_COMPANY_ID
-        factos_payload = {
-            "company_id": factos_company_id,
-            "type_code": payload.type_code,
-            "operation_type": payload.operation_type,
-            "series": series,
-            "correlative": correlative,
-            "issue_date": str(payload.issue_date),
-            "issue_time": payload.issue_time or "12:00:00",
-            "due_date": str(payload.due_date) if payload.due_date else None,
-            "currency": payload.currency,
-            "payment_method": payload.payment_method,
-            "installments": [i.model_dump() for i in payload.installments] if payload.installments else None,
-            "detraction": payload.detraction.model_dump() if payload.detraction else None,
-            "retention": payload.retention,
-            "prepayments": payload.prepayments,
-            "related_documents": payload.related_documents,
-            "note": payload.note.model_dump() if payload.note else None,
-            "client": {
-                "doc_type": payload.client.doc_type,
-                "doc_number": payload.client.doc_number.strip(),
-                "name": payload.client.name.strip(),
-                "address": payload.client.address,
-                "email": payload.client.email,
-            },
-            "totals": {
-                "taxable": float(total_taxable),
-                "unaffected": 0.0,
-                "exonerated": 0.0,
-                "free": 0.0,
-                "exportation": 0.0,
-                "igv": float(total_igv),
-                "icbper": 0.0,
-                "discount": 0.0,
-                "total": float(total_doc),
-            },
-            "items": [
-                {
-                    "internal_code": it.internal_code,
-                    "description": it.description,
-                    "unit_code": it.unit_code,
-                    "quantity": float(it.quantity),
-                    "unit_value": float(it.unit_value),
-                    "unit_price": float(it.unit_price),
-                    "igv_type": it.igv_type,
-                    "igv_amount": float(it.igv_amount),
-                    "total": float(it.total),
-                }
-                for it in payload.items
-            ]
-        }
+    db.commit()
 
-        result = await factos_client.send_document(factos_payload)
-        if result.get("error"):
-            new_doc.status = "rejected"
-            new_doc.sunat_description = result.get("message", "Error al procesar con Factos API")
-        else:
-            doc_data = result.get("data", {})
-            factos_id = doc_data.get("id")
-            new_doc.facturador_document_id = str(factos_id) if factos_id else None
-            new_doc.status = doc_data.get("status", "accepted")
+    # 5. Enviar a Factos API (tanto en prueba como en producción real)
+    try:
+        factos_company_id = await resolve_factos_company_id(db, company, payload.is_test_mode)
+    except FactosLinkError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    factos_payload = {
+        "company_id": factos_company_id,
+        "external_id": str(new_doc.id),
+        "is_test": payload.is_test_mode,
+        "type_code": payload.type_code,
+        "operation_type": operation_type,
+        "series": series,
+        "correlative": correlative,
+        "issue_date": str(payload.issue_date),
+        "issue_time": payload.issue_time or "12:00:00",
+        "due_date": str(payload.due_date) if payload.due_date else None,
+        "currency": payload.currency,
+        "payment_method": payload.payment_method.lower(),
+        "installments": [i.model_dump() for i in payload.installments] if payload.installments else None,
+        "detraction": payload.detraction.model_dump() if payload.detraction else None,
+        "retention": payload.retention,
+        "prepayments": payload.prepayments,
+        "related_documents": payload.related_documents,
+        "note": payload.note.model_dump() if payload.note else None,
+        "client": {
+            "doc_type": payload.client.doc_type,
+            "doc_number": payload.client.doc_number.strip(),
+            "name": payload.client.name.strip(),
+            "address": payload.client.address,
+            "email": payload.client.email,
+        },
+        "totals": {
+            "taxable": float(total_taxable),
+            "unaffected": 0.0,
+            "exonerated": 0.0,
+            "free": 0.0,
+            "exportation": 0.0,
+            "igv": float(total_igv),
+            "icbper": 0.0,
+            "discount": 0.0,
+            "total": float(total_doc),
+        },
+        "items": [
+            {
+                "internal_code": it.internal_code,
+                "description": it.description,
+                "unit_code": it.unit_code,
+                "quantity": float(it.quantity),
+                "unit_value": float(it.unit_value),
+                "unit_price": float(it.unit_price),
+                "igv_type": it.igv_type,
+                "igv_amount": float(it.igv_amount),
+                "total": float(it.total),
+            }
+            for it in payload.items
+        ],
+    }
+
+    result = await factos_client.send_document(factos_payload)
+    if result.get("error"):
+        new_doc.status = "rejected"
+        new_doc.sunat_description = result.get("message", "Error al procesar con Factos API")
+        db.commit()
+        raise_factos_error(result)
+
+    doc_data = result.get("data", {})
+    factos_id = doc_data.get("id")
+    if factos_id:
+        new_doc.facturador_document_id = str(factos_id)
+        urls = file_urls("documents", str(factos_id))
+        new_doc.pdf_url = urls["pdf_url"]
+        new_doc.xml_url = urls["xml_url"]
+        new_doc.cdr_url = urls["cdr_url"]
+
+    # Si el webhook ya actualizó el comprobante sincrónicamente, conservar su estado
+    db.refresh(new_doc)
+    if new_doc.status == "pending":
+        factos_status = doc_data.get("status", "pending")
+        new_doc.status = map_status(factos_status)
+        if new_doc.status == "accepted":
             new_doc.sunat_code = "0"
-            new_doc.sunat_description = "Comprobante emitido y enviado a SUNAT correctamente."
-            if factos_id and settings.API_FACTURADOR_URL:
-                new_doc.pdf_url = f"{settings.API_FACTURADOR_URL}/api/v1/documents/{factos_id}/pdf"
-                new_doc.xml_url = f"{settings.API_FACTURADOR_URL}/api/v1/documents/{factos_id}/xml"
-                new_doc.cdr_url = f"{settings.API_FACTURADOR_URL}/api/v1/documents/{factos_id}/cdr"
+            new_doc.sunat_description = doc_data.get("sunat_description", "Aceptado por SUNAT")
+        else:
+            new_doc.sunat_code = "0"
+            new_doc.sunat_description = "Comprobante emitido y encolado para procesamiento en Factos."
 
     db.commit()
     db.refresh(new_doc)
@@ -289,9 +308,9 @@ async def void_document(
     if doc.status == "voided":
         raise HTTPException(status_code=400, detail="El comprobante ya fue anulado")
 
-    now_utc = datetime.now(timezone.utc)
+    now_pe = now_peru()
     doc.void_reason = payload.reason
-    doc.voided_at = now_utc
+    doc.voided_at = now_pe
     doc.status = "voided"
 
     if not doc.is_test_mode and doc.facturador_document_id:

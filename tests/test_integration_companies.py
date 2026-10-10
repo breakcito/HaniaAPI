@@ -13,7 +13,6 @@ def test_list_companies(client: TestClient, auth_headers: dict):
     first_company = data[0]
     assert "ruc" in first_company
     assert "business_name" in first_company
-    assert "bn_account" in first_company
 
 def test_get_company_detail(client: TestClient, auth_headers: dict, test_company):
     """Verifica obtener detalle de una empresa por ID."""
@@ -24,13 +23,12 @@ def test_get_company_detail(client: TestClient, auth_headers: dict, test_company
     assert data["ruc"] == test_company.ruc
 
 def test_create_and_update_company(client: TestClient, auth_headers: dict):
-    """Verifica crear y actualizar empresa, sincronizando datos al Facturador."""
+    """Verifica crear y actualizar empresa."""
     # 1. Crear empresa hermana / sucursal
     test_ruc = "20999111222"
     create_payload = {
         "ruc": test_ruc,
         "business_name": "TRANSPORTES Y LOGISTICA CUPPER SAC",
-        "trademark_name": "CUPPER LOGISTICS",
         "address": "Carretera Central Km 12",
         "ubigeo": "150103",
         "department": "LIMA",
@@ -38,7 +36,6 @@ def test_create_and_update_company(client: TestClient, auth_headers: dict):
         "district": "ATE",
         "establishment_code": "0001",
         "sol_user": "MODDATOS",
-        "bn_account": "00-068-999888",
         "detraction_percent_default": 10.0,
         "is_matrix": False
     }
@@ -54,7 +51,7 @@ def test_create_and_update_company(client: TestClient, auth_headers: dict):
 
     # 2. Actualizar datos de la empresa
     update_payload = {
-        "trademark_name": "CUPPER LOGISTICS & MINING EXPRESS",
+        "business_name": "CUPPER LOGISTICS & MINING EXPRESS SAC",
         "phone": "999888777",
         "email": "logistica@cupper.pe",
         "detraction_percent_default": 12.0
@@ -62,7 +59,7 @@ def test_create_and_update_company(client: TestClient, auth_headers: dict):
     resp_update = client.put(f"/api/companies/{company_id}", headers=auth_headers, json=update_payload)
     assert resp_update.status_code == 200
     updated = resp_update.json()
-    assert updated["trademark_name"] == "CUPPER LOGISTICS & MINING EXPRESS"
+    assert updated["business_name"] == "CUPPER LOGISTICS & MINING EXPRESS SAC"
     assert updated["email"] == "logistica@cupper.pe"
 
 def test_delete_matrix_company_blocked(client: TestClient, auth_headers: dict, test_company):
@@ -71,10 +68,3 @@ def test_delete_matrix_company_blocked(client: TestClient, auth_headers: dict, t
         resp = client.delete(f"/api/companies/{test_company.id}", headers=auth_headers)
         assert resp.status_code == 400
         assert "matriz" in resp.text.lower()
-
-def test_sync_companies_from_factos_api(client: TestClient, auth_headers: dict):
-    """Verifica sincronización de empresas dadas de alta en Factos API Gateway."""
-    resp = client.post("/api/companies/sync-factos", headers=auth_headers)
-    assert resp.status_code == 200
-    synced = resp.json()
-    assert isinstance(synced, list)

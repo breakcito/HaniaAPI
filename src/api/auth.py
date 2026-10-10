@@ -53,11 +53,7 @@ def create_user(
         if not existing.is_active:
             existing.password_hash = get_password_hash(payload.password)
             existing.full_name = payload.full_name.strip() if payload.full_name else existing.full_name
-            existing.email = payload.email.strip() if payload.email else existing.email
-            existing.phone = payload.phone.strip() if payload.phone else existing.phone
             existing.role = payload.role or existing.role
-            existing.default_company_id = payload.default_company_id or existing.default_company_id
-            existing.assigned_series = payload.assigned_series or existing.assigned_series
             existing.is_active = True
             existing.deleted_at = None
             db.commit()
@@ -72,11 +68,7 @@ def create_user(
         username=payload.username.strip(),
         password_hash=get_password_hash(payload.password),
         full_name=payload.full_name.strip() if payload.full_name else payload.username.strip(),
-        email=payload.email.strip() if payload.email else None,
-        phone=payload.phone.strip() if payload.phone else None,
         role=payload.role or "ADMIN",
-        default_company_id=payload.default_company_id,
-        assigned_series=payload.assigned_series,
         is_active=True,
     )
     db.add(new_user)
@@ -97,16 +89,10 @@ def update_user(
 
     if payload.full_name is not None:
         user.full_name = payload.full_name.strip()
-    if payload.email is not None:
-        user.email = payload.email.strip()
-    if payload.phone is not None:
-        user.phone = payload.phone.strip()
     if payload.role is not None:
         user.role = payload.role
-    if payload.default_company_id is not None:
-        user.default_company_id = payload.default_company_id
-    if payload.assigned_series is not None:
-        user.assigned_series = payload.assigned_series
+    if payload.permissions is not None:
+        user.permissions = payload.permissions
     if payload.password:
         user.password_hash = get_password_hash(payload.password)
 

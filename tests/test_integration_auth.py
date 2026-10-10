@@ -36,14 +36,11 @@ def test_users_crud_and_roles(client: TestClient, auth_headers: dict, test_compa
         "username": unique_user,
         "password": "Password123!",
         "full_name": "Juan Perez Vendedor",
-        "email": f"{unique_user}@empresa.com",
-        "phone": "987654321",
-        "role": "VENDEDOR",
-        "default_company_id": test_company.id,
-        "assigned_series": "F001,B001"
+        "role": "VENDEDOR"
     }
     resp_create = client.post("/api/auth/users", headers=auth_headers, json=user_payload)
     if resp_create.status_code == 400:
+        resp_list = client.get("/api/auth/users", headers=auth_headers)
         created_user = next(u for u in resp_list.json() if u["username"] == unique_user)
         user_id = created_user["id"]
     else:
@@ -51,14 +48,11 @@ def test_users_crud_and_roles(client: TestClient, auth_headers: dict, test_compa
         created_user = resp_create.json()
         user_id = created_user["id"]
         assert created_user["role"] == "VENDEDOR"
-        assert created_user["assigned_series"] == "F001,B001"
 
     update_payload = {
-        "role": "CONTADOR",
-        "assigned_series": "F001,B001,FC01"
+        "role": "CONTADOR"
     }
     resp_update = client.put(f"/api/auth/users/{user_id}", headers=auth_headers, json=update_payload)
     assert resp_update.status_code == 200
     updated_user = resp_update.json()
     assert updated_user["role"] == "CONTADOR"
-    assert "FC01" in updated_user["assigned_series"]

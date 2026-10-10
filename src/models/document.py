@@ -1,4 +1,5 @@
-from datetime import datetime, timezone, date
+from datetime import datetime, date
+from src.core.datetime_peru import now_peru
 from sqlalchemy import Column, Integer, String, Boolean, Numeric, Date, DateTime, Text, JSON, ForeignKey
 from sqlalchemy.orm import relationship
 from src.core.database import Base
@@ -73,7 +74,7 @@ class Document(Base):
     voided_at = Column(DateTime, nullable=True)
     
     is_active = Column(Boolean, default=True, nullable=False, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = Column(DateTime, default=now_peru, nullable=False)
     deleted_at = Column(DateTime, nullable=True)
 
     company = relationship("Company", back_populates="documents")

@@ -11,7 +11,6 @@ class Company(Base):
     facturador_company_id = Column(String(36), nullable=True, index=True) # UUID asignado en Factos API
     ruc = Column(String(11), unique=True, index=True, nullable=False)
     business_name = Column(String(255), nullable=False)
-    trademark_name = Column(String(255), nullable=True)
     address = Column(String(255), nullable=True)
     ubigeo = Column(String(6), nullable=True)
     department = Column(String(100), nullable=True)
@@ -21,11 +20,9 @@ class Company(Base):
     sol_user = Column(String(50), nullable=True)
     
     # Cuentas maestras y contacto
-    bn_account = Column(String(50), nullable=True) # Cuenta de Detracción Banco de la Nación
     detraction_percent_default = Column(Numeric(5, 2), default=Decimal("10.00"), nullable=True)
     phone = Column(String(50), nullable=True)
     email = Column(String(100), nullable=True)
-    website = Column(String(100), nullable=True)
     logo_url = Column(Text, nullable=True)
 
     is_matrix = Column(Boolean, default=False, nullable=False) # True para Cupper & Hannia
@@ -37,9 +34,5 @@ class Company(Base):
 
     documents = relationship("Document", back_populates="company")
     despatches = relationship("Despatch", back_populates="company")
-    clients = relationship("Client", back_populates="company")
-    products = relationship("Product", back_populates="company")
     bank_accounts = relationship("BankAccount", back_populates="company", cascade="all, delete-orphan")
     series = relationship("CompanySeries", back_populates="company", cascade="all, delete-orphan")
-    employees = relationship("Employee", back_populates="company", cascade="all, delete-orphan")
-    vehicles = relationship("Vehicle", back_populates="company", cascade="all, delete-orphan")

@@ -3,7 +3,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 class ClientBase(BaseModel):
-    company_id: int
     doc_type: str = Field(default="6", description="6=RUC, 1=DNI, 4=CE, 7=Pasaporte, 0=Sin Doc")
     doc_number: str = Field(..., max_length=15)
     name: str

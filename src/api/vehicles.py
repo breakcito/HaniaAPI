@@ -12,7 +12,6 @@ router = APIRouter(prefix="/vehicles", tags=["Vehículos y Transporte GRE"])
 
 @router.get("", response_model=List[VehicleOut])
 def list_vehicles(
-    company_id: Optional[int] = Query(None),
     query: Optional[str] = Query(None, description="Búsqueda por placa o marca"),
     include_inactive: bool = Query(False),
     db: Session = Depends(get_db),
@@ -21,8 +20,6 @@ def list_vehicles(
     q = db.query(Vehicle)
     if not include_inactive:
         q = q.filter(Vehicle.is_active == True)
-    if company_id:
-        q = q.filter(Vehicle.company_id == company_id)
     if query:
         pattern = f"%{query}%"
         q = q.filter((Vehicle.plate_number.ilike(pattern)) | (Vehicle.brand.ilike(pattern)))
@@ -46,7 +43,6 @@ def create_vehicle(
     current_user: User = Depends(get_current_user),
 ):
     veh = Vehicle(
-        company_id=payload.company_id,
         plate_number=payload.plate_number.strip().upper(),
         secondary_plate=payload.secondary_plate.strip().upper() if payload.secondary_plate else None,
         brand=payload.brand.strip() if payload.brand else None,

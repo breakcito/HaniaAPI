@@ -29,11 +29,6 @@ from src.api.webhooks import router as webhooks_router
 from src.api.reports import router as reports_router
 from src.api.employees import router as employees_router
 from src.api.vehicles import router as vehicles_router
-
-from src.core.database import SessionLocal
-from src.services.facturador.sync import auto_sync_test_company
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hania_api")
 
 @asynccontextmanager
@@ -42,15 +37,8 @@ async def lifespan(app: FastAPI):
     try:
         init_db()
         logger.info("Base de datos inicializada y sembrada con éxito.")
-        
-        # Sincronización automática de empresa de prueba con Factos API
-        db = SessionLocal()
-        try:
-            await auto_sync_test_company(db)
-        finally:
-            db.close()
     except Exception as e:
-        logger.error(f"Error al inicializar la base de datos o sincronizar empresa de prueba: {e}")
+        logger.error(f"Error al inicializar la base de datos: {e}")
     yield
     logger.info("Finalizando Hania API...")
 

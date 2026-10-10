@@ -50,7 +50,7 @@ def download_sales_excel(
     docs = q.order_by(Document.issue_date.asc(), Document.correlative.asc()).all()
 
     excel_bytes = generate_sales_report_excel(
-        company_name=company.trademark_name or company.business_name,
+        company_name=company.business_name,
         company_ruc=company.ruc,
         documents=docs,
     )
@@ -95,7 +95,7 @@ def download_despatches_excel(
     despatches = q.order_by(Despatch.issue_date.asc(), Despatch.correlative.asc()).all()
 
     excel_bytes = generate_despatches_report_excel(
-        company_name=company.trademark_name or company.business_name,
+        company_name=company.business_name,
         company_ruc=company.ruc,
         despatches=despatches,
     )

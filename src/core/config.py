@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     FACTOS_USER_EMAIL: str = os.getenv("FACTOS_USER_EMAIL", "")
     FACTOS_USER_PASSWORD: str = os.getenv("FACTOS_USER_PASSWORD", "")
     FACTOS_COMPANY_ID: str = os.getenv("FACTOS_COMPANY_ID", "")
+    # URL pública de este API a la que Factos enviará los webhooks (ej. https://api.hania.pe/api/webhooks/factos)
+    HANIA_WEBHOOK_URL: str = os.getenv("HANIA_WEBHOOK_URL", "")
 
     # Configuración inicial de empresa y usuario
     ADMIN_INITIAL_USERNAME: str = os.getenv("ADMIN_INITIAL_USERNAME", "admin")

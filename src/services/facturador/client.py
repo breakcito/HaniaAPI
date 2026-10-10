@@ -11,16 +11,27 @@ from src.core.config import settings
 
 logger = logging.getLogger("facturador_gateway")
 
+import json
+from decimal import Decimal
+from datetime import date, datetime
+
+def _json_default(o):
+    if isinstance(o, Decimal):
+        return float(o)
+    if isinstance(o, (date, datetime)):
+        return o.isoformat()
+    return str(o)
+
 class FacturadorClient:
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None):
         self.base_url = (base_url or settings.API_FACTURADOR_URL).rstrip("/")
         self.api_key = api_key or settings.API_KEY_FACTURADOR
 
-    def _get_headers(self) -> Dict[str, str]:
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
+    def _get_headers(self, is_multipart: bool = False) -> Dict[str, str]:
+        headers = {"Accept": "application/json"}
+        # En multipart httpx define el Content-Type con su boundary
+        if not is_multipart:
+            headers["Content-Type"] = "application/json"
         if self.api_key:
             headers["X-API-KEY"] = self.api_key
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -32,17 +43,27 @@ class FacturadorClient:
         endpoint: str,
         json_data: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
-        timeout: float = 30.0
+        timeout: float = 30.0,
+        form_data: Optional[Dict[str, Any]] = None,
+        files: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         url = f"{self.base_url}/api/v1/{endpoint.lstrip('/')}"
-        headers = self._get_headers()
+        is_multipart = files is not None
+        headers = self._get_headers(is_multipart)
+
+        # Si hay json_data, serializarlo explícitamente convirtiendo Decimals a float
+        content = None
+        if not is_multipart and json_data is not None:
+            content = json.dumps(json_data, default=_json_default).encode("utf-8")
 
         async with httpx.AsyncClient(timeout=timeout) as client:
             try:
                 response = await client.request(
                     method=method,
                     url=url,
-                    json=json_data,
+                    content=content,
+                    data=form_data if is_multipart else None,
+                    files=files,
                     params=params,
                     headers=headers,
                 )
@@ -128,9 +149,26 @@ class FacturadorClient:
         """Crea una empresa de prueba SUNAT en el Facturador si no existe."""
         return await self.request("POST", "companies/test-company")
 
+    async def create_company(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Crea una nueva empresa en el Facturador."""
+        return await self.request("POST", "companies", json_data=data)
+
+    async def create_company_with_certificate(
+        self, data: Dict[str, Any], certificate: bytes, filename: str
+    ) -> Dict[str, Any]:
+        """Crea una empresa en el Facturador subiendo su certificado digital (.pfx/.p12/.pem)."""
+        form = {k: ("1" if v is True else "0" if v is False else str(v)) for k, v in data.items() if v is not None}
+        return await self.request(
+            "POST", "companies", form_data=form, files={"certificate": (filename, certificate)}
+        )
+
     async def update_company(self, company_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         """Actualiza los datos de la empresa emisora en el Facturador (razón social, nombre comercial, dirección, ubigeo, credenciales SOL, webhook, etc.)."""
         return await self.request("PUT", f"companies/{company_id}", json_data=data)
+
+    async def delete_company(self, company_id: str) -> Dict[str, Any]:
+        """Elimina una empresa en el Facturador."""
+        return await self.request("DELETE", f"companies/{company_id}")
 
     async def update_company_webhook(self, company_id: str, webhook_url: str, webhook_secret: Optional[str] = None) -> Dict[str, Any]:
         """Configura la URL de recepción de webhooks de la empresa en el Facturador."""

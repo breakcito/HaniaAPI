@@ -3,7 +3,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 class VehicleBase(BaseModel):
-    company_id: int
     plate_number: str = Field(..., max_length=10, description="Placa principal")
     secondary_plate: Optional[str] = Field(None, max_length=10, description="Placa secundaria / carreta")
     brand: Optional[str] = None

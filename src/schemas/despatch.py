@@ -42,7 +42,7 @@ class DespatchCreate(BaseModel):
     
     # Transporte privado
     driver: Optional[Dict[str, Any]] = None # {doc_type, doc_number, name, license}
-    vehicle: Optional[Dict[str, Any]] = None # {plate_number, secondary_plate, mtc}
+    vehicle: Optional[Dict[str, Any]] = None # {plate, secondary_plate} (contrato Factos)
     
     items: List[DespatchItemSchema]
 

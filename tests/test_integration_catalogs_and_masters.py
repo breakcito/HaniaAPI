@@ -57,12 +57,11 @@ def test_products_crud_and_search(client: TestClient, auth_headers: dict, test_c
     resp_update = client.put(
         f"/api/products/{product_id}",
         headers=auth_headers,
-        json={"unit_price": 395.0, "stock": 480.0}
+        json={"unit_price": 395.0}
     )
     assert resp_update.status_code == 200
     updated = resp_update.json()
     assert float(updated["unit_price"]) == 395.0
-    assert float(updated["stock"]) == 480.0
 
 def test_clients_crud_and_search(client: TestClient, auth_headers: dict, test_company):
     """Verifica registro y actualización de clientes con ubigeo y días de crédito."""

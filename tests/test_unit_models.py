@@ -18,28 +18,21 @@ def test_company_model_structure(db_session: Session, test_company: Company):
     """Verifica que el modelo de Empresa posea los atributos fiscales y maestros requeridos."""
     assert test_company.ruc is not None
     assert len(test_company.ruc) == 11
-    assert hasattr(test_company, "bn_account")
     assert hasattr(test_company, "detraction_percent_default")
     assert hasattr(test_company, "facturador_company_id")
     assert hasattr(test_company, "is_matrix")
 
 def test_product_model_detraction_and_stock(db_session: Session, test_company: Company):
-    """Verifica la persistencia de productos con reglas de detracción, stock y servicio."""
+    """Verifica la persistencia de productos compartidos con reglas de detracción y servicio."""
     prod = Product(
-        company_id=test_company.id,
-        internal_code="TEST-UNIT-01",
         description="Carbón Especial Prueba Unitaria",
-        category_name="Minerales",
         unit_code="TNE",
         unit_value=Decimal("381.3559"),
         unit_price=Decimal("450.00"),
-        cost_price=Decimal("310.00"),
         is_service=False,
         has_detraction=True,
         detraction_code="027",
         detraction_percent=Decimal("10.00"),
-        stock=Decimal("100.000"),
-        stock_min=Decimal("20.000"),
         is_active=True,
     )
     db_session.add(prod)
@@ -50,7 +43,6 @@ def test_product_model_detraction_and_stock(db_session: Session, test_company: C
     assert prod.has_detraction is True
     assert prod.detraction_code == "027"
     assert prod.detraction_percent == Decimal("10.00")
-    assert prod.stock == Decimal("100.00")
     assert prod.is_service is False
 
     # Cleanup
@@ -58,15 +50,12 @@ def test_product_model_detraction_and_stock(db_session: Session, test_company: C
     db_session.commit()
 
 def test_employee_seller_driver_flags(db_session: Session, test_company: Company):
-    """Verifica los atributos duales de chofer y vendedor en trabajadores."""
+    """Verifica los atributos de chofer y datos personales en trabajadores corporativos."""
     emp = Employee(
-        company_id=test_company.id,
         document_type="1",
         document_number="78901234",
         first_name="Carlos",
         last_name="Mendoza Soto",
-        job_title="Conductor & Vendedor Senior",
-        commission_rate=Decimal("3.50"),
         license_number="Q78901234",
         is_active=True,
     )
@@ -75,18 +64,16 @@ def test_employee_seller_driver_flags(db_session: Session, test_company: Company
     db_session.refresh(emp)
 
     assert emp.id is not None
-    assert emp.is_seller is True
-    assert emp.commission_rate == Decimal("3.50")
     assert emp.license_number == "Q78901234"
+    assert emp.first_name == "Carlos"
 
     # Cleanup
     db_session.delete(emp)
     db_session.commit()
 
 def test_vehicle_model_attributes(db_session: Session, test_company: Company):
-    """Verifica el modelo de flota vehicular con semirremolque y autorización MTC."""
+    """Verifica el modelo de flota vehicular compartida con semirremolque y autorización MTC."""
     veh = Vehicle(
-        company_id=test_company.id,
         plate_number="T5X-888",
         secondary_plate="R7Y-111",
         brand="VOLVO",
@@ -108,9 +95,8 @@ def test_vehicle_model_attributes(db_session: Session, test_company: Company):
     db_session.commit()
 
 def test_client_model_ubigeo_and_credit(db_session: Session, test_company: Company):
-    """Verifica que el cliente almacene ubigeo, contacto y días de crédito predeterminados."""
+    """Verifica que el cliente corporativo almacene ubigeo, contacto y días de crédito predeterminados."""
     cli = Client(
-        company_id=test_company.id,
         doc_type="6",
         doc_number="20999888777",
         name="CLIENTE DE PRUEBAS UNITARIAS SAC",

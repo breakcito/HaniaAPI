@@ -9,7 +9,6 @@ class Bank(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     code = Column(String(20), unique=True, index=True, nullable=False) # BCP, BBVA, INTERBANK, SCOTIABANK, BN, BANBIF, PICHINCHA
     name = Column(String(100), nullable=False)
-    short_name = Column(String(50), nullable=True)
     is_national = Column(Boolean, default=False, nullable=False) # True para Banco de la Nación
     is_active = Column(Boolean, default=True, nullable=False)
 

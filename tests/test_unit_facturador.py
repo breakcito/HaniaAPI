@@ -53,7 +53,7 @@ def test_sunat_catalogs_completeness():
 
     det_codes = [ds["code"] for ds in DETRACTION_SERVICES]
     assert "027" in det_codes
-    assert "025" in det_codes
+    assert "034" in det_codes
 
     all_cats = get_all_sunat_catalogs()
     assert "document_types" in all_cats

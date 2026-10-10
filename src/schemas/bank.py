@@ -6,7 +6,6 @@ class BankOut(BaseModel):
     id: int
     code: str
     name: str
-    short_name: Optional[str] = None
     is_national: bool = False
     is_active: bool
 

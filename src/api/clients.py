@@ -12,7 +12,6 @@ router = APIRouter(prefix="/clients", tags=["Clientes"])
 
 @router.get("", response_model=List[ClientOut])
 def list_clients(
-    company_id: Optional[int] = Query(None),
     query: Optional[str] = Query(None, description="Búsqueda por nombre o número de documento"),
     include_inactive: bool = Query(False, description="Incluir clientes inactivos"),
     db: Session = Depends(get_db),
@@ -21,8 +20,6 @@ def list_clients(
     q = db.query(Client)
     if not include_inactive:
         q = q.filter(Client.is_active == True)
-    if company_id:
-        q = q.filter(Client.company_id == company_id)
     if query:
         pattern = f"%{query}%"
         q = q.filter((Client.name.ilike(pattern)) | (Client.doc_number.ilike(pattern)))
@@ -46,7 +43,6 @@ def create_client(
     current_user: User = Depends(get_current_user),
 ):
     existing = db.query(Client).filter(
-        Client.company_id == payload.company_id,
         Client.doc_number == payload.doc_number.strip(),
     ).first()
     if existing:
@@ -69,7 +65,6 @@ def create_client(
         return existing
 
     new_client = Client(
-        company_id=payload.company_id,
         doc_type=payload.doc_type,
         doc_number=payload.doc_number.strip(),
         name=payload.name.strip(),

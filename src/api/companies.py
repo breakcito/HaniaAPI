@@ -4,34 +4,23 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from src.core.database import get_db
 from src.core.deps import get_current_user
-from src.core.config import settings
 from src.models.user import User
 from src.models.company import Company
 from src.models.series import CompanySeries
-from src.models.bank import Bank, BankAccount
 from src.schemas.company import CompanyCreate, CompanyUpdate, CompanyOut
 from src.services.facturador.client import facturador_gateway
-
-from src.services.facturador.sync import auto_sync_test_company
+from src.services.facturador.company_link import try_auto_link, register_company, FactosLinkError
+from fastapi import UploadFile, File, Form
 
 router = APIRouter(prefix="/companies", tags=["Multiempresa"])
 
 @router.get("", response_model=List[CompanyOut])
-async def list_companies(
+def list_companies(
     include_inactive: bool = Query(False, description="Incluir empresas eliminadas lógicamente"),
     is_production: Optional[bool] = Query(None, description="Filtrar por entorno de producción o pruebas"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Verificación proactiva: Si no existe empresa de prueba en Hania, sincronizarla con Factos API
-    if is_production is not True:
-        has_test_company = db.query(Company).filter(Company.is_production == False, Company.is_active == True).first()
-        if not has_test_company:
-            try:
-                await auto_sync_test_company(db)
-            except Exception:
-                pass
-
     q = db.query(Company)
     if not include_inactive:
         q = q.filter(Company.is_active == True)
@@ -88,7 +77,6 @@ async def create_company(
     company = Company(
         ruc=payload.ruc,
         business_name=payload.business_name,
-        trademark_name=payload.trademark_name or payload.business_name,
         address=payload.address,
         ubigeo=payload.ubigeo,
         department=payload.department,
@@ -96,11 +84,9 @@ async def create_company(
         district=payload.district,
         establishment_code=payload.establishment_code,
         sol_user=payload.sol_user or "MODDATOS",
-        bn_account=payload.bn_account,
         detraction_percent_default=payload.detraction_percent_default,
         phone=payload.phone,
         email=payload.email,
-        website=payload.website,
         logo_url=payload.logo_url,
         facturador_company_id=payload.facturador_company_id,
         is_matrix=payload.is_matrix,
@@ -110,6 +96,12 @@ async def create_company(
     db.add(company)
     db.commit()
     db.refresh(company)
+
+    # Intentar vincular automáticamente con Factos si ya está registrada allá
+    try:
+        await try_auto_link(db, company)
+    except Exception:
+        pass
 
     # Sembrar series iniciales para esta nueva empresa
     default_series_specs = [
@@ -134,8 +126,46 @@ async def create_company(
 
     return company
 
+@router.post("/{company_id}/enable-facturador", response_model=CompanyOut)
+async def enable_company_in_facturador(
+    company_id: int,
+    sol_user: str = Form(...),
+    sol_pass: str = Form(...),
+    certificate_pass: str = Form(...),
+    certificate: UploadFile = File(...),
+    client_id: Optional[str] = Form(None),
+    client_secret: Optional[str] = Form(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Habilita la empresa en Factos subiendo su certificado digital y credenciales SOL."""
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    cert_bytes = await certificate.read()
+    if not cert_bytes:
+        raise HTTPException(status_code=400, detail="El archivo del certificado digital está vacío")
+
+    res = await register_company(
+        db=db,
+        company=company,
+        sol_user=sol_user.strip(),
+        sol_pass=sol_pass.strip(),
+        certificate_pass=certificate_pass.strip(),
+        certificate=cert_bytes,
+        certificate_filename=certificate.filename or "cert.pfx",
+        client_id=client_id.strip() if client_id else None,
+        client_secret=client_secret.strip() if client_secret else None,
+    )
+    if res.get("error"):
+        raise HTTPException(status_code=422, detail=res.get("message", "Error al registrar empresa en Factos"))
+
+    db.refresh(company)
+    return company
+
 @router.put("/{company_id}", response_model=CompanyOut)
-async def update_company(
+def update_company(
     company_id: int,
     payload: CompanyUpdate,
     db: Session = Depends(get_db),
@@ -153,174 +183,7 @@ async def update_company(
     db.commit()
     db.refresh(company)
 
-    # Si la empresa está vinculada al Facturador, sincronizar automáticamente los cambios
-    factos_id = company.facturador_company_id or (settings.FACTOS_COMPANY_ID if company.is_matrix else None)
-    if factos_id:
-        factos_payload = {}
-        if company.business_name:
-            factos_payload["business_name"] = company.business_name
-        if company.trademark_name:
-            factos_payload["trademark_name"] = company.trademark_name
-        if company.address:
-            factos_payload["address"] = company.address
-        if company.ubigeo:
-            factos_payload["ubigeo"] = company.ubigeo
-        if company.department:
-            factos_payload["department"] = company.department
-        if company.province:
-            factos_payload["province"] = company.province
-        if company.district:
-            factos_payload["district"] = company.district
-        if company.establishment_code:
-            factos_payload["establishment_code"] = company.establishment_code
-        if company.sol_user:
-            factos_payload["sol_user"] = company.sol_user
-
-        if factos_payload:
-            try:
-                res = await facturador_gateway.update_company(str(factos_id), factos_payload)
-                if not res.get("error"):
-                    company.facturador_company_id = str(factos_id)
-                    db.commit()
-            except Exception:
-                pass  # Sincronización secundaria no bloquea actualización local
-
     return company
-
-@router.post("/{company_id}/sync-to-factos")
-async def sync_company_to_factos(
-    company_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Envía y actualiza los datos actuales de la empresa en Hania hacia el Facturador Factos API."""
-    company = db.query(Company).filter(Company.id == company_id).first()
-    if not company:
-        raise HTTPException(status_code=404, detail="Empresa no encontrada")
-
-    factos_id = company.facturador_company_id or (settings.FACTOS_COMPANY_ID if company.is_matrix else None)
-    if not factos_id:
-        res_list = await facturador_gateway.list_companies()
-        if not res_list.get("error"):
-            for fc in res_list.get("data", []):
-                if fc.get("ruc") == company.ruc:
-                    factos_id = str(fc.get("id"))
-                    company.facturador_company_id = factos_id
-                    db.commit()
-                    break
-
-    if not factos_id:
-        raise HTTPException(
-            status_code=400,
-            detail="La empresa no está vinculada a un ID del facturador. Sincronice primero desde Factos."
-        )
-
-    factos_payload = {
-        "business_name": company.business_name,
-        "trademark_name": company.trademark_name or company.business_name,
-        "address": company.address,
-        "ubigeo": company.ubigeo,
-        "department": company.department,
-        "province": company.province,
-        "district": company.district,
-        "establishment_code": company.establishment_code or "0000",
-        "sol_user": company.sol_user or "MODDATOS",
-    }
-    factos_payload = {k: v for k, v in factos_payload.items() if v is not None}
-
-    res = await facturador_gateway.update_company(str(factos_id), factos_payload)
-    if res.get("error"):
-        raise HTTPException(
-            status_code=502,
-            detail=f"Error al actualizar la empresa en Factos API: {res.get('message')}"
-        )
-
-    return {
-        "status": "success",
-        "message": "Datos de la empresa sincronizados y actualizados correctamente en el Facturador Factos API.",
-        "factos_company_id": factos_id,
-        "factos_response": res.get("data")
-    }
-
-@router.post("/sync-factos", response_model=List[CompanyOut])
-async def sync_companies_from_factos(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Sincroniza e importa las empresas configuradas en el Facturador Electrónico Factos API."""
-    res = await facturador_gateway.list_companies()
-    if res.get("error"):
-        raise HTTPException(
-            status_code=502,
-            detail=f"Error comunicando con Factos API: {res.get('message', 'Fallo de conexión')}"
-        )
-
-    factos_companies = res.get("data", [])
-    synced_companies = []
-
-    for fc in factos_companies:
-        ruc = fc.get("ruc")
-        if not ruc:
-            continue
-
-        comp = db.query(Company).filter(Company.ruc == ruc).first()
-        if comp:
-            comp.facturador_company_id = str(fc.get("id"))
-            if not comp.business_name:
-                comp.business_name = fc.get("business_name")
-            if not comp.trademark_name:
-                comp.trademark_name = fc.get("trademark_name")
-            if not comp.address:
-                comp.address = fc.get("address")
-            if not comp.ubigeo:
-                comp.ubigeo = fc.get("ubigeo")
-            db.commit()
-            db.refresh(comp)
-            synced_companies.append(comp)
-        else:
-            new_comp = Company(
-                facturador_company_id=str(fc.get("id")),
-                ruc=ruc,
-                business_name=fc.get("business_name") or f"Empresa RUC {ruc}",
-                trademark_name=fc.get("trademark_name") or fc.get("business_name"),
-                address=fc.get("address"),
-                ubigeo=fc.get("ubigeo"),
-                department=fc.get("department"),
-                province=fc.get("province"),
-                district=fc.get("district"),
-                establishment_code=fc.get("establishment_code") or "0000",
-                sol_user=fc.get("sol_user") or "MODDATOS",
-                bn_account="00-068-123456",
-                is_matrix=False,
-                is_active=True,
-            )
-            db.add(new_comp)
-            db.commit()
-            db.refresh(new_comp)
-
-            # Sembrar series
-            default_series = [
-                ("01", "F001", "Serie Principal Facturas"),
-                ("03", "B001", "Serie Principal Boletas"),
-                ("07", "FC01", "Serie Notas de Crédito Facturas"),
-                ("07", "BC01", "Serie Notas de Crédito Boletas"),
-                ("08", "FD01", "Serie Notas de Débito Facturas"),
-                ("08", "BD01", "Serie Notas de Débito Boletas"),
-                ("09", "T001", "Serie Guías Remitente"),
-            ]
-            for dt, s, d in default_series:
-                db.add(CompanySeries(
-                    company_id=new_comp.id,
-                    document_type=dt,
-                    series=s,
-                    correlative_current=0,
-                    description=d,
-                    is_active=True,
-                ))
-            db.commit()
-            synced_companies.append(new_comp)
-
-    return synced_companies
 
 @router.delete("/{company_id}", status_code=status.HTTP_200_OK)
 def delete_company(
@@ -341,4 +204,4 @@ def delete_company(
     company.is_active = False
     company.deleted_at = datetime.now(timezone.utc)
     db.commit()
-    return {"message": "Empresa eliminada lógicamente con éxito", "id": company_id, "is_active": False}
+    return {"message": "Empresa eliminada con éxito", "id": company_id, "is_active": False}

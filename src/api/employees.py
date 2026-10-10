@@ -18,17 +18,14 @@ def _serialize_employee(emp: Employee, db: Session) -> dict:
     perms_list = [p.strip() for p in user.permissions.split(",") if p.strip()] if (user and user.permissions) else None
     return {
         "id": emp.id,
-        "company_id": emp.company_id,
         "document_type": emp.document_type,
         "document_number": emp.document_number,
         "first_name": emp.first_name,
         "last_name": emp.last_name,
         "full_name": emp.full_name,
-        "job_title": emp.job_title,
         "email": emp.email,
         "phone": emp.phone,
         "license_number": emp.license_number,
-        "commission_rate": emp.commission_rate,
         "user_id": emp.user_id,
         "has_account": user is not None and user.is_active,
         "username": user.username if user else None,
@@ -41,8 +38,6 @@ def _serialize_employee(emp: Employee, db: Session) -> dict:
 
 @router.get("", response_model=List[EmployeeOut])
 def list_employees(
-    company_id: Optional[int] = Query(None),
-    job_title: Optional[str] = Query(None, description="Filtrar por cargo (Vendedor, Chofer, etc.)"),
     query: Optional[str] = Query(None, description="Búsqueda por nombre o DNI"),
     include_inactive: bool = Query(False),
     db: Session = Depends(get_db),
@@ -51,10 +46,6 @@ def list_employees(
     q = db.query(Employee)
     if not include_inactive:
         q = q.filter(Employee.is_active == True)
-    if company_id:
-        q = q.filter(Employee.company_id == company_id)
-    if job_title:
-        q = q.filter(Employee.job_title == job_title)
     if query:
         pattern = f"%{query}%"
         q = q.filter(
@@ -92,27 +83,21 @@ def create_employee(
             username=payload.username.strip(),
             password_hash=get_password_hash(payload.password),
             full_name=f"{payload.first_name.strip()} {payload.last_name.strip()}",
-            email=payload.email.strip() if payload.email else None,
-            phone=payload.phone.strip() if payload.phone else None,
             role=payload.system_role or "PERSONALIZADO",
             permissions=perms_str,
-            default_company_id=payload.company_id,
             is_active=True,
         )
         db.add(created_user)
         db.flush()
 
     emp = Employee(
-        company_id=payload.company_id,
         document_type=payload.document_type,
         document_number=payload.document_number.strip(),
         first_name=payload.first_name.strip(),
         last_name=payload.last_name.strip(),
-        job_title=payload.job_title.strip() if payload.job_title else None,
         email=payload.email.strip() if payload.email else None,
         phone=payload.phone.strip() if payload.phone else None,
         license_number=payload.license_number.strip() if payload.license_number else None,
-        commission_rate=payload.commission_rate or Decimal("0.00"),
         user_id=created_user.id if created_user else None,
         is_active=True,
     )
@@ -165,11 +150,8 @@ def update_employee(
             username=username.strip(),
             password_hash=get_password_hash(password),
             full_name=f"{emp.first_name} {emp.last_name}",
-            email=emp.email,
-            phone=emp.phone,
             role=system_role or "PERSONALIZADO",
             permissions=perms_str,
-            default_company_id=emp.company_id,
             is_active=True,
         )
         db.add(new_user)

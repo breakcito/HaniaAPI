@@ -4,16 +4,13 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, ConfigDict
 
 class EmployeeBase(BaseModel):
-    company_id: int
     document_type: str = Field(default="1", description="1=DNI, 4=CE")
     document_number: str = Field(..., max_length=15)
     first_name: str
     last_name: str
-    job_title: Optional[str] = Field(default=None, description="Cargo o puesto opcional")
     email: Optional[str] = None
     phone: Optional[str] = None
     license_number: Optional[str] = Field(None, description="Licencia de conducir MTC para transporte")
-    commission_rate: Optional[Decimal] = Field(default=Decimal("0.00"), description="Comisión opcional")
 
 class EmployeeCreate(EmployeeBase):
     create_system_access: Optional[bool] = False
@@ -27,11 +24,9 @@ class EmployeeUpdate(BaseModel):
     document_number: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
-    job_title: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     license_number: Optional[str] = None
-    commission_rate: Optional[Decimal] = None
     
     # Credenciales y permisos de acceso al sistema
     create_system_access: Optional[bool] = None

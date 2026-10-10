@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
+from src.core.datetime_peru import now_peru
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, Request, Depends, HTTPException, Header, status
 from sqlalchemy.orm import Session
@@ -112,7 +113,7 @@ async def receive_factos_webhook(
                 document.sunat_description = sunat_info.get("description", "Comprobante rechazado por SUNAT")
             elif event == "document.voided":
                 document.status = "voided"
-                document.voided_at = datetime.now(timezone.utc)
+                document.voided_at = now_peru()
                 if links.get("xml"):
                     document.void_xml_url = links["xml"]
                 if links.get("cdr"):
@@ -131,7 +132,7 @@ async def receive_factos_webhook(
         payload=payload,
         status_processed="processed",
         message=process_message,
-        created_at=datetime.now(timezone.utc),
+        created_at=now_peru(),
     )
     db.add(webhook_log)
     db.commit()

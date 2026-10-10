@@ -12,9 +12,7 @@ router = APIRouter(prefix="/products", tags=["Catálogo de Productos y Servicios
 
 @router.get("", response_model=List[ProductOut])
 def list_products(
-    company_id: Optional[int] = Query(None),
-    query: Optional[str] = Query(None, description="Búsqueda por descripción, código interno o código de barras"),
-    category: Optional[str] = Query(None, description="Filtrar por categoría"),
+    query: Optional[str] = Query(None, description="Búsqueda por descripción o código SUNAT"),
     is_service: Optional[bool] = Query(None, description="Filtrar servicios vs bienes"),
     include_inactive: bool = Query(False, description="Incluir productos eliminados lógicamente"),
     db: Session = Depends(get_db),
@@ -23,21 +21,15 @@ def list_products(
     q = db.query(Product)
     if not include_inactive:
         q = q.filter(Product.is_active == True)
-    if company_id:
-        q = q.filter(Product.company_id == company_id)
-    if category:
-        q = q.filter(Product.category_name == category)
     if is_service is not None:
         q = q.filter(Product.is_service == is_service)
     if query:
         pattern = f"%{query}%"
         q = q.filter(
             (Product.description.ilike(pattern))
-            | (Product.internal_code.ilike(pattern))
-            | (Product.barcode.ilike(pattern))
-            | (Product.category_name.ilike(pattern))
+            | (Product.sunat_code.ilike(pattern))
         )
-    return q.order_by(Product.category_name.asc(), Product.description.asc()).all()
+    return q.order_by(Product.description.asc()).all()
 
 @router.get("/{product_id}", response_model=ProductOut)
 def get_product(
@@ -57,25 +49,17 @@ def create_product(
     current_user: User = Depends(get_current_user),
 ):
     product = Product(
-        company_id=payload.company_id,
-        internal_code=payload.internal_code.strip() if payload.internal_code else None,
-        barcode=payload.barcode.strip() if payload.barcode else None,
         sunat_code=payload.sunat_code.strip() if payload.sunat_code else None,
         description=payload.description.strip(),
-        category_name=payload.category_name.strip() if payload.category_name else "General",
         unit_code=payload.unit_code,
         currency=payload.currency or "PEN",
-        unit_value=payload.unit_value,
+        unit_value=payload.unit_value if payload.unit_value is not None else (round(payload.unit_price / Decimal("1.18"), 4) if payload.unit_price else Decimal("0.00")),
         unit_price=payload.unit_price,
-        cost_price=payload.cost_price,
         igv_type=payload.igv_type,
         has_detraction=payload.has_detraction,
         detraction_code=payload.detraction_code,
         detraction_percent=payload.detraction_percent,
         is_service=payload.is_service,
-        stock=payload.stock,
-        stock_min=payload.stock_min,
-        notes=payload.notes,
         is_active=True,
     )
     db.add(product)

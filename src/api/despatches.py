@@ -1,6 +1,7 @@
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
+from src.core.datetime_peru import now_peru
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -12,6 +13,8 @@ from src.models.company import Company
 from src.models.despatch import Despatch, DespatchItem
 from src.schemas.despatch import DespatchCreate, DespatchOut, DespatchVoidRequest
 from src.services.factos_client import factos_client
+from src.services.facturador.company_link import resolve_factos_company_id, FactosLinkError
+from src.services.facturador.responses import map_status, file_urls, raise_factos_error
 
 router = APIRouter(prefix="/despatches", tags=["Guías de Remisión Electrónica (GRE)"])
 
@@ -90,7 +93,7 @@ async def create_despatch(
         ).scalar()
         correlative = (max_corr or 0) + 1
 
-    now_utc = datetime.now(timezone.utc)
+    now_pe = now_peru()
     new_gre = Despatch(
         company_id=company.id,
         is_test_mode=payload.is_test_mode,
@@ -114,7 +117,7 @@ async def create_despatch(
         driver=payload.driver,
         vehicle=payload.vehicle,
         status="pending",
-        created_at=now_utc,
+        created_at=now_pe,
     )
     db.add(new_gre)
     db.flush()
@@ -129,61 +132,64 @@ async def create_despatch(
         )
         db.add(gre_item)
 
-    if payload.is_test_mode:
-        new_gre.status = "accepted"
-        new_gre.sunat_code = "0"
-        new_gre.sunat_description = f"[MODO PRUEBA] Guía {series}-{str(correlative).zfill(8)} emitida exitosamente (simulación)."
-        if settings.API_FACTURADOR_URL:
-            new_gre.pdf_url = f"{settings.API_FACTURADOR_URL}/api/v1/despatches/simulated-{series}-{correlative}/pdf"
-            new_gre.xml_url = f"{settings.API_FACTURADOR_URL}/api/v1/despatches/simulated-{series}-{correlative}/xml"
-            new_gre.cdr_url = f"{settings.API_FACTURADOR_URL}/api/v1/despatches/simulated-{series}-{correlative}/cdr"
-    else:
-        factos_company_id = company.facturador_company_id or settings.FACTOS_COMPANY_ID
-        factos_payload = {
-            "company_id": factos_company_id,
-            "type_code": payload.type_code,
-            "series": series,
-            "correlative": correlative,
-            "issue_date": str(payload.issue_date),
-            "issue_time": payload.issue_time or "12:00:00",
-            "transfer_date": str(payload.transfer_date),
-            "transport_mode": payload.transport_mode,
-            "transfer_reason": payload.transfer_reason,
-            "transfer_description": payload.transfer_description,
-            "total_weight": float(payload.total_weight),
-            "weight_unit": payload.weight_unit,
-            "packages_count": payload.packages_count,
-            "recipient": payload.recipient,
-            "origin": payload.origin,
-            "destination": payload.destination,
-            "carrier": payload.carrier,
-            "driver": payload.driver,
-            "vehicle": payload.vehicle,
-            "items": [
-                {
-                    "internal_code": it.internal_code,
-                    "description": it.description,
-                    "unit_code": it.unit_code,
-                    "quantity": float(it.quantity),
-                }
-                for it in payload.items
-            ]
-        }
-        result = await factos_client.send_despatch(factos_payload)
-        if result.get("error"):
-            new_gre.status = "rejected"
-            new_gre.sunat_description = result.get("message", "Error al procesar GRE en Factos API")
-        else:
-            data = result.get("data", {})
-            despatch_id = data.get("id")
-            new_gre.facturador_despatch_id = str(despatch_id) if despatch_id else None
-            new_gre.status = data.get("status", "accepted")
-            new_gre.sunat_code = "0"
-            new_gre.sunat_description = "Guía de Remisión Electrónica emitida correctamente."
-            if despatch_id and settings.API_FACTURADOR_URL:
-                new_gre.pdf_url = f"{settings.API_FACTURADOR_URL}/api/v1/despatches/{despatch_id}/pdf"
-                new_gre.xml_url = f"{settings.API_FACTURADOR_URL}/api/v1/despatches/{despatch_id}/xml"
-                new_gre.cdr_url = f"{settings.API_FACTURADOR_URL}/api/v1/despatches/{despatch_id}/cdr"
+    # 5. Enviar a Factos API (tanto en prueba como en producción real)
+    try:
+        factos_company_id = await resolve_factos_company_id(db, company, payload.is_test_mode)
+    except FactosLinkError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    factos_payload = {
+        "company_id": factos_company_id,
+        "external_id": str(new_gre.id),
+        "is_test": payload.is_test_mode,
+        "type_code": payload.type_code,
+        "series": series,
+        "correlative": correlative,
+        "issue_date": str(payload.issue_date),
+        "issue_time": payload.issue_time or "12:00:00",
+        "transfer_date": str(payload.transfer_date),
+        "transport_mode": payload.transport_mode,
+        "transfer_reason": payload.transfer_reason,
+        "transfer_description": payload.transfer_description,
+        "total_weight": float(payload.total_weight),
+        "weight_unit": payload.weight_unit,
+        "packages_count": payload.packages_count,
+        "recipient": payload.recipient,
+        "origin": payload.origin,
+        "destination": payload.destination,
+        "carrier": payload.carrier,
+        "driver": payload.driver,
+        "vehicle": payload.vehicle,
+        "items": [
+            {
+                "internal_code": it.internal_code,
+                "description": it.description,
+                "unit_code": it.unit_code,
+                "quantity": float(it.quantity),
+            }
+            for it in payload.items
+        ],
+    }
+
+    result = await factos_client.send_despatch(factos_payload)
+    if result.get("error"):
+        new_gre.status = "rejected"
+        new_gre.sunat_description = result.get("message", "Error al procesar GRE en Factos API")
+        db.commit()
+        raise_factos_error(result)
+
+    data = result.get("data", {})
+    despatch_id = data.get("id")
+    if despatch_id:
+        new_gre.facturador_despatch_id = str(despatch_id)
+        urls = file_urls("despatches", str(despatch_id))
+        new_gre.pdf_url = urls["pdf_url"]
+        new_gre.xml_url = urls["xml_url"]
+        new_gre.cdr_url = urls["cdr_url"]
+
+    new_gre.status = map_status(data.get("status", "pending"))
+    new_gre.sunat_code = "0"
+    new_gre.sunat_description = "Guía de Remisión Electrónica emitida y encolada para procesamiento en Factos."
 
     db.commit()
     db.refresh(new_gre)
@@ -203,9 +209,9 @@ async def void_despatch(
     if gre.status == "voided":
         raise HTTPException(status_code=400, detail="La Guía de Remisión ya fue anulada")
 
-    now_utc = datetime.now(timezone.utc)
+    now_pe = now_peru()
     gre.void_reason = payload.reason
-    gre.voided_at = now_utc
+    gre.voided_at = now_pe
     gre.status = "voided"
 
     if not gre.is_test_mode and gre.facturador_despatch_id:
