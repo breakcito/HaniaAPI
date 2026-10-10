@@ -1,0 +1,50 @@
+name: Deploy HaniaAPI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: hania-api-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Crear tarball
+        run: |
+          tar --exclude='./.venv' --exclude='./__pycache__' --exclude='./.pytest_cache' \
+              --exclude='./tests' --exclude='/.git' --exclude='/.agents' \
+              -czf hania-api-${{ github.sha }}.tar.gz \
+              src requirements.txt
+
+      - name: Generar checksum
+        run: sha256sum hania-api-${{ github.sha }}.tar.gz | awk '{print $1}' > hania-api-${{ github.sha }}.tar.gz.sha256
+
+      - name: Subir al VPS
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 0600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+          scp hania-api-${{ github.sha }}.tar.gz hania-api-${{ github.sha }}.tar.gz.sha256 \
+              ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ secrets.VPS_TARGET_DIR }}/
+
+      - name: Disparar deploy
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+              ${{ secrets.VPS_DEPLOY_CMD }}
