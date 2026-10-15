@@ -9,6 +9,9 @@ from src.models.series import CompanySeries
 from src.models.webhook_log import WebhookLog
 from src.models.employee import Employee
 from src.models.vehicle import Vehicle
+from src.models.applied_advance import AppliedAdvance
+from src.models.purchase import PurchaseDocument
+from src.models.establishment import Establishment
 
 __all__ = [
     "User",
@@ -25,4 +28,7 @@ __all__ = [
     "WebhookLog",
     "Employee",
     "Vehicle",
+    "AppliedAdvance",
+    "PurchaseDocument",
+    "Establishment",
 ]

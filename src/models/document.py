@@ -48,6 +48,13 @@ class Document(Base):
     seller_name = Column(String(100), nullable=True)
     employee_id = Column(Integer, nullable=True, index=True)
     
+    observations = Column(Text, nullable=True)
+    pie_pagina = Column(JSON, nullable=True)
+    is_advance = Column(Boolean, default=False, nullable=False, index=True)
+    advance_total = Column(Numeric(14, 2), default=0.00, nullable=False)
+    advance_balance = Column(Numeric(14, 2), default=0.00, nullable=False)
+    has_deductions = Column(Boolean, default=False, nullable=False)
+    
     # Totales
     total_taxable = Column(Numeric(14, 2), default=0.00, nullable=False)
     total_unaffected = Column(Numeric(14, 2), default=0.00, nullable=False)

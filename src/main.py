@@ -29,6 +29,8 @@ from src.api.webhooks import router as webhooks_router
 from src.api.reports import router as reports_router
 from src.api.employees import router as employees_router
 from src.api.vehicles import router as vehicles_router
+from src.api.purchases import router as purchases_router
+from src.api.establishments import router as establishments_router
 logger = logging.getLogger("hania_api")
 
 @asynccontextmanager
@@ -74,6 +76,8 @@ app.include_router(webhooks_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(employees_router, prefix="/api")
 app.include_router(vehicles_router, prefix="/api")
+app.include_router(purchases_router, prefix="/api")
+app.include_router(establishments_router, prefix="/api")
 
 @app.get("/health")
 @app.get("/api/health")

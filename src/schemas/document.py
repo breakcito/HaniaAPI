@@ -21,7 +21,7 @@ class InstallmentSchema(BaseModel):
 class DetractionSchema(BaseModel):
     payment_method_code: str = "001" # 001 = Depósito en cuenta Banco de la Nación
     bank_account: str # Cuenta corriente detracciones BN
-    service_code: str = "023" # 023 = Minerales no metálicos / carbón, o 004 = Recursos minerales
+    service_code: str = "023" # 023 = Minerales no metálicos / carbón, o 034 = Minerales metálicos
     percent: Decimal = Field(default=Decimal("10.00"), ge=0)
     amount: Decimal = Field(..., gt=0)
 
@@ -31,6 +31,8 @@ class NoteDataSchema(BaseModel):
     affected_correlative: int
     code: str # Código catálogo SUNAT 09 o 10
     reason: str
+    dice: Optional[str] = None
+    debe_decir: Optional[str] = None
 
 class ClientDataSchema(BaseModel):
     doc_type: str # 6=RUC, 1=DNI, 4=CE, 7=Pasaporte, 0=Sin doc
@@ -38,6 +40,15 @@ class ClientDataSchema(BaseModel):
     name: str
     address: Optional[str] = None
     email: Optional[str] = None
+
+class AppliedAdvanceInput(BaseModel):
+    advance_document_id: Optional[int] = None
+    type_code: str = "01"
+    series: str
+    correlative: Any
+    amount: Decimal = Field(..., gt=0)
+    description: Optional[str] = None
+    issue_date: Optional[str] = None
 
 class DocumentCreate(BaseModel):
     company_id: int
@@ -61,6 +72,11 @@ class DocumentCreate(BaseModel):
     retention: Optional[Dict[str, Any]] = None
     prepayments: Optional[List[Dict[str, Any]]] = None
     related_documents: Optional[List[Dict[str, Any]]] = None
+    
+    observations: Optional[str] = None
+    pie_pagina: Optional[Dict[str, Any]] = None
+    is_advance: bool = False
+    applied_advances: Optional[List[AppliedAdvanceInput]] = None
     
     note: Optional[NoteDataSchema] = None # Para notas de crédito / débito
     purchase_order: Optional[str] = None
@@ -94,6 +110,13 @@ class DocumentOut(BaseModel):
     payment_method: str
     installments: Optional[List[Dict[str, Any]]] = None
     detraction: Optional[Dict[str, Any]] = None
+    
+    observations: Optional[str] = None
+    pie_pagina: Optional[Dict[str, Any]] = None
+    is_advance: bool = False
+    advance_total: Decimal = Decimal("0.00")
+    advance_balance: Decimal = Decimal("0.00")
+    has_deductions: bool = False
     
     client_doc_type: str
     client_doc_number: str

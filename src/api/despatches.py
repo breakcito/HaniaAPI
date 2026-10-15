@@ -1,22 +1,22 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 from decimal import Decimal
 from src.core.datetime_peru import now_peru
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from src.core.config import settings
 from src.core.database import get_db
 from src.core.deps import get_current_user
 from src.models.user import User
 from src.models.company import Company
 from src.models.despatch import Despatch, DespatchItem
-from src.schemas.despatch import DespatchCreate, DespatchOut, DespatchVoidRequest
+from src.models.series import CompanySeries
+from src.schemas.despatch import DespatchCreate, DespatchOut, DespatchVoidRequest, DespatchItemSchema
 from src.services.factos_client import factos_client
 from src.services.facturador.company_link import resolve_factos_company_id, FactosLinkError
 from src.services.facturador.responses import map_status, file_urls, raise_factos_error
 
-router = APIRouter(prefix="/despatches", tags=["Guías de Remisión Electrónica (GRE)"])
+router = APIRouter(prefix="/despatches", tags=["Guías de Remisión Electrónica"])
 
 @router.get("", response_model=List[DespatchOut])
 def list_despatches(
@@ -25,10 +25,8 @@ def list_despatches(
     series: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    start_date: Optional[str] = Query(None, description="Fecha inicio YYYY-MM-DD"),
-    end_date: Optional[str] = Query(None, description="Fecha fin YYYY-MM-DD"),
-    limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
+    limit: int = Query(50, le=200),
     include_inactive: bool = Query(False, description="Incluir guías eliminadas lógicamente"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -44,21 +42,12 @@ def list_despatches(
         q = q.filter(Despatch.series == series.upper())
     if status:
         q = q.filter(Despatch.status == status)
-    if start_date:
-        try:
-            d_start = datetime.strptime(start_date, "%Y-%m-%d").date()
-            q = q.filter(Despatch.issue_date >= d_start)
-        except ValueError:
-            pass
-    if end_date:
-        try:
-            d_end = datetime.strptime(end_date, "%Y-%m-%d").date()
-            q = q.filter(Despatch.issue_date <= d_end)
-        except ValueError:
-            pass
     if search:
         pattern = f"%{search}%"
-        q = q.filter(Despatch.series.ilike(pattern))
+        q = q.filter(
+            (Despatch.series.ilike(pattern)) |
+            (Despatch.transfer_reason.ilike(pattern))
+        )
 
     return q.order_by(Despatch.created_at.desc()).offset(offset).limit(limit).all()
 
@@ -70,7 +59,7 @@ def get_despatch(
 ):
     gre = db.query(Despatch).filter(Despatch.id == despatch_id).first()
     if not gre:
-        raise HTTPException(status_code=404, detail="Guía de Remisión no encontrada")
+        raise HTTPException(status_code=404, detail="Guía de remisión no encontrada")
     return gre
 
 @router.post("", response_model=DespatchOut, status_code=status.HTTP_201_CREATED)
@@ -83,15 +72,48 @@ async def create_despatch(
     if not company:
         raise HTTPException(status_code=404, detail="Empresa emisora no encontrada")
 
+    # 1. Si se indicó corregir una guía anterior, darla de baja automáticamente
+    if payload.previous_despatch_id_to_void:
+        prev_gre = db.query(Despatch).filter(Despatch.id == payload.previous_despatch_id_to_void).first()
+        if prev_gre and prev_gre.status != "voided":
+            void_reason = "Baja por reemisión y corrección de datos de guía de remisión"
+            if prev_gre.facturador_despatch_id:
+                try:
+                    await factos_client.void_despatch(prev_gre.facturador_despatch_id, void_reason)
+                except Exception:
+                    pass
+            prev_gre.status = "voided"
+            prev_gre.void_reason = void_reason
+            prev_gre.voided_at = now_peru()
+
     series = payload.series.strip().upper()
+
+    # 2. Determinar correlativo
     if payload.correlative is not None and payload.correlative > 0:
         correlative = payload.correlative
     else:
+        series_record = db.query(CompanySeries).filter(
+            CompanySeries.company_id == company.id,
+            CompanySeries.document_type == payload.type_code,
+            CompanySeries.series == series,
+        ).first()
         max_corr = db.query(func.max(Despatch.correlative)).filter(
             Despatch.company_id == company.id,
+            Despatch.type_code == payload.type_code,
             Despatch.series == series,
-        ).scalar()
-        correlative = (max_corr or 0) + 1
+        ).scalar() or 0
+        base_corr = series_record.correlative_current if series_record else 0
+        correlative = max(base_corr, max_corr) + 1
+
+    # 3. Observaciones y peso referencial
+    observations = payload.observations
+    if payload.is_referential_weight:
+        if not observations or "REFERENCIAL" not in observations.upper():
+            observations = (observations + " - EL PESO ES REFERENCIAL") if observations else "EL PESO ES REFERENCIAL"
+
+    # 4. Certificado vehicular / TUCE
+    vehicle_dict = payload.vehicle or {}
+    vehicle_cert = payload.vehicle_certificate or vehicle_dict.get("certificate")
 
     now_pe = now_peru()
     new_gre = Despatch(
@@ -115,24 +137,51 @@ async def create_despatch(
         destination=payload.destination,
         carrier=payload.carrier,
         driver=payload.driver,
-        vehicle=payload.vehicle,
+        vehicle=vehicle_dict,
+        vehicle_certificate=vehicle_cert,
+        observations=observations,
+        is_referential_weight=payload.is_referential_weight,
+        related_documents=payload.related_documents,
         status="pending",
         created_at=now_pe,
     )
     db.add(new_gre)
     db.flush()
 
-    for it in payload.items:
+    despatch_items = list(payload.items)
+    if not despatch_items:
+        despatch_items = [
+            DespatchItemSchema(
+                internal_code=None,
+                description="Mineral en bruto sin procesar",
+                unit_code=payload.weight_unit or "TNE",
+                quantity=payload.total_weight or Decimal("1.0"),
+            )
+        ]
+
+    for it in despatch_items:
+        desc = it.description.strip() if it.description else "Mineral en bruto sin procesar"
         gre_item = DespatchItem(
             despatch_id=new_gre.id,
             internal_code=it.internal_code,
-            description=it.description,
-            unit_code=it.unit_code,
+            description=desc,
+            unit_code=it.unit_code or "TNE",
             quantity=it.quantity,
         )
         db.add(gre_item)
 
-    # 5. Enviar a Factos API (tanto en prueba como en producción real)
+    # Actualizar correlativo de la serie
+    series_record = db.query(CompanySeries).filter(
+        CompanySeries.company_id == company.id,
+        CompanySeries.document_type == payload.type_code,
+        CompanySeries.series == series,
+    ).first()
+    if series_record:
+        series_record.correlative_current = max(series_record.correlative_current, correlative)
+
+    db.commit()
+
+    # 5. Enviar a Factos API (con enlace inmediato al PDF)
     try:
         factos_company_id = await resolve_factos_company_id(db, company, payload.is_test_mode)
     except FactosLinkError as exc:
@@ -148,26 +197,31 @@ async def create_despatch(
         "issue_date": str(payload.issue_date),
         "issue_time": payload.issue_time or "12:00:00",
         "transfer_date": str(payload.transfer_date),
+        "delivery_date": str(payload.delivery_date) if payload.delivery_date else None,
         "transport_mode": payload.transport_mode,
         "transfer_reason": payload.transfer_reason,
         "transfer_description": payload.transfer_description,
         "total_weight": float(payload.total_weight),
         "weight_unit": payload.weight_unit,
         "packages_count": payload.packages_count,
+        "is_referential_weight": payload.is_referential_weight,
+        "vehicle_certificate": vehicle_cert,
+        "observations": observations,
+        "related_documents": payload.related_documents,
         "recipient": payload.recipient,
         "origin": payload.origin,
         "destination": payload.destination,
         "carrier": payload.carrier,
         "driver": payload.driver,
-        "vehicle": payload.vehicle,
+        "vehicle": vehicle_dict,
         "items": [
             {
                 "internal_code": it.internal_code,
-                "description": it.description,
-                "unit_code": it.unit_code,
+                "description": it.description or "Mineral en bruto sin procesar",
+                "unit_code": it.unit_code or "TNE",
                 "quantity": float(it.quantity),
             }
-            for it in payload.items
+            for it in despatch_items
         ],
     }
 
@@ -178,18 +232,24 @@ async def create_despatch(
         db.commit()
         raise_factos_error(result)
 
-    data = result.get("data", {})
-    despatch_id = data.get("id")
-    if despatch_id:
-        new_gre.facturador_despatch_id = str(despatch_id)
-        urls = file_urls("despatches", str(despatch_id))
-        new_gre.pdf_url = urls["pdf_url"]
-        new_gre.xml_url = urls["xml_url"]
-        new_gre.cdr_url = urls["cdr_url"]
+    desp_data = result.get("data", {})
+    factos_id = desp_data.get("id")
+    if factos_id:
+        new_gre.facturador_despatch_id = str(factos_id)
+        links = desp_data.get("links", {})
+        new_gre.pdf_url = links.get("pdf") or file_urls("despatches", str(factos_id))["pdf_url"]
+        new_gre.xml_url = links.get("xml") or file_urls("despatches", str(factos_id))["xml_url"]
+        new_gre.cdr_url = links.get("cdr") or file_urls("despatches", str(factos_id))["cdr_url"]
 
-    new_gre.status = map_status(data.get("status", "pending"))
-    new_gre.sunat_code = "0"
-    new_gre.sunat_description = "Guía de Remisión Electrónica emitida y encolada para procesamiento en Factos."
+    if new_gre.status == "pending":
+        factos_status = desp_data.get("status", "pending")
+        new_gre.status = map_status(factos_status)
+        if new_gre.status == "accepted":
+            new_gre.sunat_code = "0"
+            new_gre.sunat_description = desp_data.get("sunat_description", "Guía aceptada por SUNAT")
+        else:
+            new_gre.sunat_code = "0"
+            new_gre.sunat_description = "Guía emitida y encolada para procesamiento en Factos."
 
     db.commit()
     db.refresh(new_gre)
@@ -204,40 +264,19 @@ async def void_despatch(
 ):
     gre = db.query(Despatch).filter(Despatch.id == despatch_id).first()
     if not gre:
-        raise HTTPException(status_code=404, detail="Guía de Remisión no encontrada")
+        raise HTTPException(status_code=404, detail="Guía de remisión no encontrada")
 
     if gre.status == "voided":
-        raise HTTPException(status_code=400, detail="La Guía de Remisión ya fue anulada")
+        raise HTTPException(status_code=400, detail="La guía ya se encuentra anulada")
 
-    now_pe = now_peru()
-    gre.void_reason = payload.reason
-    gre.voided_at = now_pe
+    if gre.facturador_despatch_id:
+        result = await factos_client.void_despatch(gre.facturador_despatch_id, payload.reason)
+        if result.get("error"):
+            raise_factos_error(result)
+
     gre.status = "voided"
-
-    if not gre.is_test_mode and gre.facturador_despatch_id:
-        await factos_client.void_despatch(gre.facturador_despatch_id, payload.reason)
-
-    gre.sunat_description = f"Guía de Remisión anulada. Motivo: {payload.reason}"
-
+    gre.void_reason = payload.reason
+    gre.voided_at = now_peru()
     db.commit()
     db.refresh(gre)
     return gre
-
-@router.delete("/{despatch_id}", status_code=status.HTTP_200_OK)
-def delete_despatch(
-    despatch_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Eliminación LÓGICA (Soft Delete) de Guía de Remisión. Nunca se elimina físicamente de la base de datos."""
-    gre = db.query(Despatch).filter(Despatch.id == despatch_id).first()
-    if not gre:
-        raise HTTPException(status_code=404, detail="Guía de Remisión no encontrada")
-
-    if not gre.is_active:
-        return {"message": "La Guía ya fue eliminada lógicamente", "id": despatch_id, "is_active": False}
-
-    gre.is_active = False
-    gre.deleted_at = datetime.now(timezone.utc)
-    db.commit()
-    return {"message": "Guía de Remisión archivada/eliminada lógicamente con éxito", "id": despatch_id, "is_active": False}

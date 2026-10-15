@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class DespatchItemSchema(BaseModel):
     internal_code: Optional[str] = None
-    description: str
+    description: str = "Mineral en bruto sin procesar"
     unit_code: str = "TNE"
     quantity: Decimal = Field(..., gt=0)
 
@@ -20,15 +20,24 @@ class DespatchCreate(BaseModel):
     issue_date: str # YYYY-MM-DD
     issue_time: Optional[str] = "12:00:00"
     transfer_date: str # YYYY-MM-DD
-    delivery_date: Optional[str] = None
+    delivery_date: Optional[str] = None # Distinguir fecha de entrega al transportista
     
     transport_mode: str = "01" # 01=Público, 02=Privado
-    transfer_reason: str = "01" # 01=Venta, 04=Traslado entre establecimientos, 13=Otros
+    # Motivos simplificados: 01=Venta, 02=Compra, 04=Traslado entre establecimientos, 13=Transformación, etc.
+    transfer_reason: str = "01"
     transfer_description: Optional[str] = None
     
     total_weight: Decimal = Field(..., gt=0)
     weight_unit: str = "TNE" # TNE o KGM
     packages_count: int = Field(default=1, ge=1)
+    
+    is_referential_weight: bool = False # Indicador de si el peso es referencial
+    vehicle_certificate: Optional[str] = None # TUCE o Certificado Vehicular
+    observations: Optional[str] = None
+    related_documents: Optional[List[Dict[str, Any]]] = None # Facturas de compra de proveedores
+    
+    # En caso de corregir una guía anterior: se anula automáticamente la anterior y se emite esta nueva
+    previous_despatch_id_to_void: Optional[int] = None
     
     # Destinatario
     recipient: Dict[str, Any] # {doc_type, doc_number, name, address, email}
@@ -42,7 +51,7 @@ class DespatchCreate(BaseModel):
     
     # Transporte privado
     driver: Optional[Dict[str, Any]] = None # {doc_type, doc_number, name, license}
-    vehicle: Optional[Dict[str, Any]] = None # {plate, secondary_plate} (contrato Factos)
+    vehicle: Optional[Dict[str, Any]] = None # {plate, secondary_plate, certificate}
     
     items: List[DespatchItemSchema]
 
@@ -69,12 +78,17 @@ class DespatchOut(BaseModel):
     total_weight: Decimal
     weight_unit: str
     packages_count: int
+    is_referential_weight: bool = False
+    vehicle_certificate: Optional[str] = None
+    observations: Optional[str] = None
+    related_documents: Optional[List[Dict[str, Any]]] = None
     recipient: Dict[str, Any]
     origin: Dict[str, Any]
     destination: Dict[str, Any]
     carrier: Optional[Dict[str, Any]] = None
     driver: Optional[Dict[str, Any]] = None
     vehicle: Optional[Dict[str, Any]] = None
+    items: Optional[List[DespatchItemSchema]] = None
     status: str
     sunat_code: Optional[str] = None
     sunat_description: Optional[str] = None

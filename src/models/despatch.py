@@ -47,6 +47,10 @@ class Despatch(Base):
     # Transporte privado
     driver = Column(JSON, nullable=True) # {doc_type, doc_number, name, license}
     vehicle = Column(JSON, nullable=True) # {plate, secondary_plate} (contrato Factos)
+    vehicle_certificate = Column(String(100), nullable=True) # TUCE o Certificado Vehicular
+    observations = Column(Text, nullable=True)
+    is_referential_weight = Column(Boolean, default=False, nullable=False)
+    related_documents = Column(JSON, nullable=True) # Facturas de compras asociadas
 
     # Estado SUNAT / Factos: pending, accepted, rejected, voided
     status = Column(String(20), default="pending", nullable=False, index=True)
