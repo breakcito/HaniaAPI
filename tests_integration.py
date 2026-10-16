@@ -27,9 +27,7 @@ login_payload = {
     "username": "admin",
     "password": "Password123!"
 }
-r_login = client.post(f"{HANIA_URL}/api/auth/login", data=login_payload)
-if r_login.status_code != 200:
-    r_login = client.post(f"{HANIA_URL}/api/auth/login", json=login_payload)
+r_login = client.post(f"{HANIA_URL}/api/auth/login", json=login_payload)
 
 print(f"Login response status: {r_login.status_code}")
 if r_login.status_code != 200:

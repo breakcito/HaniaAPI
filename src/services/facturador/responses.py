@@ -4,17 +4,24 @@ from typing import Any, Dict
 from fastapi import HTTPException
 from src.core.config import settings
 
-# Estados de Factos -> estados de Hania (pending, accepted, rejected, voided)
+# Estados diferenciados de Factos -> estados de Hania
 _STATUS_MAP = {
+    "draft": "pending",
+    "pending": "pending",
+    "processing": "processing",
+    "sending": "sending",
+    "waiting_sunat": "sending",
     "accepted": "accepted",
     "rejected": "rejected",
     "voided": "voided",
+    "error": "error",
+    "failed": "error",
 }
 
 
 def map_status(factos_status: str) -> str:
-    """Cualquier estado intermedio de Factos (pending, waiting_sunat, failed...) es 'pending' en Hania."""
-    return _STATUS_MAP.get(factos_status or "", "pending")
+    """Mapea estados diferenciados según el ciclo de procesamiento y respuesta de SUNAT."""
+    return _STATUS_MAP.get((factos_status or "").lower(), "pending")
 
 
 def file_urls(resource: str, factos_id: str) -> Dict[str, str]:

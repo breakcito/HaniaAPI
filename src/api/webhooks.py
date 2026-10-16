@@ -74,6 +74,13 @@ async def receive_factos_webhook(
                 despatch.status = "rejected"
                 despatch.sunat_code = sunat_info.get("code", "99")
                 despatch.sunat_description = sunat_info.get("description", "Guía rechazada por SUNAT")
+            elif event in ["despatch.processing", "despatch.sending"]:
+                despatch.status = "sending"
+                despatch.sunat_description = sunat_info.get("description", "Enviando o en proceso con SUNAT")
+            elif event in ["despatch.error", "despatch.failed"]:
+                despatch.status = "error"
+                despatch.sunat_code = sunat_info.get("code", "ERROR")
+                despatch.sunat_description = sunat_info.get("description", "Error de comunicación o envío con SUNAT")
             elif event == "despatch.voided":
                 despatch.status = "voided"
 
@@ -111,6 +118,13 @@ async def receive_factos_webhook(
                 document.status = "rejected"
                 document.sunat_code = sunat_info.get("code", "99")
                 document.sunat_description = sunat_info.get("description", "Comprobante rechazado por SUNAT")
+            elif event in ["document.processing", "document.sending"]:
+                document.status = "sending"
+                document.sunat_description = sunat_info.get("description", "Enviando o en proceso con SUNAT")
+            elif event in ["document.error", "document.failed"]:
+                document.status = "error"
+                document.sunat_code = sunat_info.get("code", "ERROR")
+                document.sunat_description = sunat_info.get("description", "Error de comunicación o envío con SUNAT")
             elif event == "document.voided":
                 document.status = "voided"
                 document.voided_at = now_peru()

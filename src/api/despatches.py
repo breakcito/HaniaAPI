@@ -187,6 +187,20 @@ async def create_despatch(
     except FactosLinkError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    factos_rel_docs = None
+    if payload.related_documents:
+        factos_rel_docs = []
+        for rd in payload.related_documents:
+            rd_item = dict(rd)
+            if not rd_item.get("number"):
+                s = rd_item.get("series", "")
+                c = rd_item.get("correlative", "")
+                if s and c:
+                    rd_item["number"] = f"{s}-{c}"
+            if not rd_item.get("type_code") and rd_item.get("document_type"):
+                rd_item["type_code"] = rd_item["document_type"]
+            factos_rel_docs.append(rd_item)
+
     factos_payload = {
         "company_id": factos_company_id,
         "external_id": str(new_gre.id),
@@ -207,7 +221,7 @@ async def create_despatch(
         "is_referential_weight": payload.is_referential_weight,
         "vehicle_certificate": vehicle_cert,
         "observations": observations,
-        "related_documents": payload.related_documents,
+        "related_documents": factos_rel_docs,
         "recipient": payload.recipient,
         "origin": payload.origin,
         "destination": payload.destination,
